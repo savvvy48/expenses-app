@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
+import '../../core/widgets/count_up_text.dart';
 import '../../core/widgets/spring_button.dart';
+import '../../core/widgets/empty_state_widget.dart';
 import '../../core/widgets/toast.dart';
 import '../../models/person.dart';
 import '../../providers/people_provider.dart';
@@ -117,7 +119,11 @@ class PeopleScreen extends StatelessWidget {
             if (active.isEmpty && pending.isEmpty)
               AnimatedListItem(
                 index: 1,
-                child: _EmptyPeopleState(isDark: isDark, theme: theme),
+                child: const EmptyStateWidget(
+                  title: 'No people yet',
+                  subtitle: 'Add people to split expenses with',
+                  icon: Icons.people_outline,
+                ),
               ),
 
             const SizedBox(height: 100),
@@ -390,64 +396,7 @@ class _SwipeablePersonTile extends StatelessWidget {
   }
 }
 
-// --- Empty People State ---
-class _EmptyPeopleState extends StatefulWidget {
-  final bool isDark;
-  final ThemeData theme;
-  const _EmptyPeopleState({required this.isDark, required this.theme});
-  @override
-  State<_EmptyPeopleState> createState() => _EmptyPeopleStateState();
-}
-
-class _EmptyPeopleStateState extends State<_EmptyPeopleState>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 3))
-      ..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(40),
-      child: Center(
-        child: Column(
-          children: [
-            AnimatedBuilder(
-              animation: _ctrl,
-              builder: (ctx, child) =>
-                  Transform.translate(
-                    offset: Offset(0, -8 * _ctrl.value),
-                    child: child,
-                  ),
-              child: Container(
-                width: 80,
-                height: 80,
-                color: widget.isDark
-                    ? AppColors.darkCard
-                    : AppColors.lightBorder,
-                child: Icon(Icons.people_outline,
-                    size: 40,
-                    color: widget.isDark
-                        ? AppColors.darkTextTertiary
-                        : AppColors.lightTextTertiary),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('No people yet',
-                style: widget.theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
+// --- Empty People State replaced by shared widget ---
             Text('Add people to split expenses with',
                 style: widget.theme.textTheme.bodySmall,
                 textAlign: TextAlign.center),

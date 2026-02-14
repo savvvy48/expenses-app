@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
 import '../../core/widgets/spring_button.dart';
-import '../../core/widgets/toast.dart';
+import '../../core/utils/app_feedback.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/budget_provider.dart';
@@ -48,7 +48,7 @@ class SettingsScreen extends StatelessWidget {
                 value: isDark,
                 activeTrackColor: AppColors.primary,
                 onChanged: (_) {
-                  HapticFeedback.selectionClick();
+                  AppFeedback.onSelection();
                   themeProv.toggleTheme();
                 },
               ),
@@ -72,8 +72,7 @@ class SettingsScreen extends StatelessWidget {
                 value: false,
                 activeTrackColor: AppColors.primary,
                 onChanged: (_) {
-                  HapticFeedback.selectionClick();
-                  AppToast.success(context, 'Reminders coming soon');
+                  AppFeedback.info(context, 'Reminders coming soon');
                 },
               ),
             ),
@@ -106,9 +105,9 @@ class SettingsScreen extends StatelessWidget {
               isDark: isDark,
               theme: theme,
               onTap: () {
-                HapticFeedback.selectionClick();
+                AppFeedback.onSelection();
                 // TODO: Show currency picker dialog and save to settings
-                AppToast.info(context, 'Global currency setting coming soon');
+                AppFeedback.info(context, 'Global currency setting coming soon');
               },
             ),
           ),
@@ -158,8 +157,7 @@ class SettingsScreen extends StatelessWidget {
               isDark: isDark,
               theme: theme,
               onTap: () {
-                HapticFeedback.lightImpact();
-                AppToast.warning(context, 'Share feature coming soon');
+                AppFeedback.warning(context, 'Share feature coming soon');
               },
             ),
           ),
@@ -174,8 +172,7 @@ class SettingsScreen extends StatelessWidget {
               isDark: isDark,
               theme: theme,
               onTap: () {
-                HapticFeedback.lightImpact();
-                AppToast.warning(context, 'Export feature coming soon');
+                AppFeedback.warning(context, 'Export feature coming soon');
               },
             ),
           ),
@@ -193,8 +190,7 @@ class SettingsScreen extends StatelessWidget {
                 value: false,
                 activeTrackColor: AppColors.primary,
                 onChanged: (_) {
-                  HapticFeedback.selectionClick();
-                  AppToast.warning(context, 'Backup coming soon');
+                  AppFeedback.warning(context, 'Backup coming soon');
                 },
               ),
             ),
@@ -312,16 +308,15 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () {
                     final val = double.tryParse(ctrl.text);
                     if (val != null && val > 0) {
-                      HapticFeedback.mediumImpact();
                       if (type == 'monthly') {
                         prov.setMonthlyLimit(val);
                       } else {
                         prov.setDailyLimit(val);
                       }
                       Navigator.pop(ctx);
-                      AppToast.success(context, 'Budget updated!');
+                      AppFeedback.success(context, 'Budget updated!');
                     } else {
-                      AppToast.error(ctx, 'Enter a valid amount');
+                      AppFeedback.error(ctx, 'Enter a valid amount');
                     }
                   },
                   child: Container(
@@ -364,14 +359,13 @@ class SettingsScreen extends StatelessWidget {
             ),
             SpringButton(
               onTap: () {
-                HapticFeedback.heavyImpact();
                 final expProv = context.read<ExpenseProvider>();
                 final ids = expProv.allExpenses.map((e) => e.id).toList();
                 for (final id in ids) {
                   expProv.deleteExpense(id);
                 }
                 Navigator.pop(ctx);
-                AppToast.success(context, 'All data cleared');
+                AppFeedback.success(context, 'All data cleared');
               },
               child: Container(
                 padding:

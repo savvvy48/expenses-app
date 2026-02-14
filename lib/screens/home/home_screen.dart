@@ -8,6 +8,9 @@ import '../../core/widgets/animated_list_item.dart';
 import '../../core/widgets/count_up_text.dart';
 import '../../core/widgets/spring_button.dart';
 import '../../core/widgets/toast.dart';
+import '../../core/widgets/empty_state_widget.dart';
+import '../../core/widgets/budget_warning_widget.dart';
+import '../../core/theme/theme_provider.dart';
 import '../../models/expense.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/budget_provider.dart';
@@ -353,7 +356,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? SliverToBoxAdapter(
                     child: AnimatedListItem(
                       index: 4,
-                      child: _EmptyState(isDark: isDark, theme: theme),
+                      child: const EmptyStateWidget(
+                        title: 'No expenses yet',
+                        subtitle: 'Tap + to add your first expense',
+                        icon: Icons.receipt_long,
+                      ),
                     ),
                   )
                 : SliverPadding(
@@ -401,7 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
           label: 'Undo',
           textColor: AppColors.primary,
           onPressed: () {
-            HapticFeedback.mediumImpact();
+            AppFeedback.onTap();
             context.read<ExpenseProvider>().undoDelete();
           },
         ),
@@ -478,7 +485,7 @@ class _SwipeableTransactionTile extends StatelessWidget {
         key: ValueKey(expense.id),
         direction: DismissDirection.endToStart,
         onDismissed: (_) {
-          HapticFeedback.heavyImpact();
+          AppFeedback.heavyImpact();
           onDelete();
         },
         background: Container(
@@ -592,74 +599,7 @@ class _SwipeableTransactionTile extends StatelessWidget {
   }
 }
 
-// --- Empty State with Animated Icon ---
-class _EmptyState extends StatefulWidget {
-  final bool isDark;
-  final ThemeData theme;
-  const _EmptyState({required this.isDark, required this.theme});
-  @override
-  State<_EmptyState> createState() => _EmptyStateState();
-}
-
-class _EmptyStateState extends State<_EmptyState>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 3))
-      ..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(40),
-      child: Center(
-        child: Column(
-          children: [
-            AnimatedBuilder(
-              animation: _ctrl,
-              builder: (ctx, child) {
-                return Transform.translate(
-                  offset: Offset(0, -8 * _ctrl.value),
-                  child: child,
-                );
-              },
-              child: Container(
-                width: 80,
-                height: 80,
-                color: widget.isDark
-                    ? AppColors.darkCard
-                    : AppColors.lightBorder,
-                child: Icon(Icons.receipt_long,
-                    size: 40,
-                    color: widget.isDark
-                        ? AppColors.darkTextTertiary
-                        : AppColors.lightTextTertiary),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('No expenses yet',
-                style: widget.theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text('Tap the + button to add your first expense',
-                style: widget.theme.textTheme.bodySmall,
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// --- Empty State replaced by shared widget ---
 
 // --- Expense Detail Sheet ---
 class _ExpenseDetailSheet extends StatelessWidget {
@@ -896,16 +836,17 @@ class _FilterSheet extends StatelessWidget {
                   label: 'All',
                   selected: provider.searchQuery.isEmpty,
                   onTap: () {
+                    AppFeedback.onSelection();
                     provider.setFilterCategory(null);
                     Navigator.pop(context);
                   },
                   isDark: isDark),
               ...ExpenseCategory.defaults.map((cat) => _FilterChip(
                     label: cat.label,
-                    selected: false,
+                    selected: provider.searchQuery == cat.id,
                     color: cat.color,
                     onTap: () {
-                      HapticFeedback.selectionClick();
+                      AppFeedback.onSelection();
                       provider.setFilterCategory(cat.id);
                       Navigator.pop(context);
                     },
@@ -922,9 +863,9 @@ class _FilterSheet extends StatelessWidget {
             children: PaymentMethod.values
                 .map((m) => _FilterChip(
                       label: m.label,
-                      selected: false,
+                      selected: provider.searchQuery == m.id,
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        AppFeedback.onSelection();
                         provider.setFilterPaymentMethod(m);
                         Navigator.pop(context);
                       },

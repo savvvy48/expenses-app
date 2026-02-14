@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import '../models/budget.dart';
 
+enum BudgetStatus { safe, notice, warning, critical, exceeded }
+
 class BudgetProvider extends ChangeNotifier {
   static const String _boxName = 'budget';
   Budget _budget = const Budget(id: 'default');
@@ -29,10 +31,29 @@ class BudgetProvider extends ChangeNotifier {
   bool isNearMonthlyBudget(double spent) => spent >= _budget.monthlyLimit * 0.8;
   bool isOverDailyBudget(double spent) => spent >= _budget.dailyLimit;
 
-  Color budgetColor(double utilization) {
-    if (utilization >= 1.0) return const Color(0xFFFF7675);
-    if (utilization >= 0.8) return const Color(0xFFFDCB6E);
-    return const Color(0xFF00B894);
+  BudgetStatus getBudgetStatus(double spent, double limit) {
+    if (limit <= 0) return BudgetStatus.safe;
+    final usage = spent / limit;
+    if (usage >= 1.0) return BudgetStatus.exceeded;
+    if (usage >= 0.9) return BudgetStatus.critical;
+    if (usage >= 0.75) return BudgetStatus.warning;
+    if (usage >= 0.5) return BudgetStatus.notice;
+    return BudgetStatus.safe;
+  }
+
+  Color statusColor(BudgetStatus status) {
+    switch (status) {
+      case BudgetStatus.exceeded:
+        return const Color(0xFFD63031); // Dark Red
+      case BudgetStatus.critical:
+        return const Color(0xFFFF7675); // Red
+      case BudgetStatus.warning:
+        return const Color(0xFFFD9644); // Orange
+      case BudgetStatus.notice:
+        return const Color(0xFFFDCB6E); // Yellow
+      case BudgetStatus.safe:
+        return const Color(0xFF00B894); // Green
+    }
   }
 
   Future<void> setMonthlyLimit(double limit) async {

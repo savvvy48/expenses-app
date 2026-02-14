@@ -9,6 +9,8 @@ import '../../core/widgets/animated_list_item.dart';
 import '../../core/widgets/shake_widget.dart';
 import '../../core/widgets/spring_button.dart';
 import '../../core/widgets/success_overlay.dart';
+import '../../core/utils/app_feedback.dart';
+import '../../core/theme/theme_provider.dart';
 import '../../core/widgets/toast.dart';
 import '../../models/expense.dart';
 import '../../providers/expense_provider.dart';
@@ -103,8 +105,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
     if (!_isIncome && _splits.isNotEmpty) {
       final splitTotal = _splits.fold<double>(0, (sum, s) => sum + s.amount);
       if (splitTotal > amount) {
-        HapticFeedback.heavyImpact();
-        AppToast.error(
+        AppFeedback.error(
             context,
             'Split total (\$${splitTotal.toStringAsFixed(2)}) exceeds amount (\$${amount.toStringAsFixed(2)})'
         );
@@ -135,7 +136,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
     // Check daily limit (Issue #28)
     if (!_isIncome && !_isEditing) {
       if (provider.isDailyLimitExceeded(amount)) {
-        HapticFeedback.heavyImpact();
+        AppFeedback.onDelete(); // Heavy impact
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -172,7 +173,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
       provider.addExpense(expense);
     }
 
-    HapticFeedback.mediumImpact();
+    AppFeedback.onSuccess();
     SuccessOverlay.show(context,
         message: _isEditing
             ? 'Updated!'
@@ -262,7 +263,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
                                 icon: Icons.arrow_upward,
                                 isSelected: !_isIncome,
                                 onTap: () {
-                                  HapticFeedback.selectionClick();
+                                  AppFeedback.onTap();
                                   setState(() => _isIncome = false);
                                 },
                               ),
@@ -271,7 +272,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
                                 icon: Icons.arrow_downward,
                                 isSelected: _isIncome,
                                 onTap: () {
-                                  HapticFeedback.selectionClick();
+                                  AppFeedback.onTap();
                                   setState(() => _isIncome = true);
                                 },
                               ),

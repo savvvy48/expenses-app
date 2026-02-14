@@ -6,6 +6,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
 import '../../core/widgets/count_up_text.dart';
 import '../../core/widgets/spring_button.dart';
+import '../../core/widgets/empty_state_widget.dart';
 import '../../models/expense.dart';
 import '../../providers/expense_provider.dart';
 
@@ -111,11 +112,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ),
                     const SizedBox(height: 20),
                     if (categoryTotals.isEmpty)
-                      SizedBox(
-                        height: 180,
-                        child: Center(
-                          child: Text('No expense data for this period',
-                              style: theme.textTheme.bodySmall),
+                      const SizedBox(
+                        height: 250,
+                        child: EmptyStateWidget(
+                          title: 'No Data',
+                          subtitle: 'No expenses for this period',
+                          icon: Icons.bar_chart,
                         ),
                       )
                     else
