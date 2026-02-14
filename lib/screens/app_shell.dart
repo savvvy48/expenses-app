@@ -1,4 +1,4 @@
-import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/constants/app_colors.dart';
@@ -32,28 +32,9 @@ class _AppShellState extends State<AppShell> {
       HapticFeedback.mediumImpact();
       // Backdrop blur + slide up modal
       Navigator.of(context).push(
-        PageRouteBuilder(
-          opaque: false,
-          barrierColor: Colors.black38,
-          barrierDismissible: true,
-          pageBuilder: (context, animation, _) {
-            return BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: 10 * animation.value,
-                sigmaY: 10 * animation.value,
-              ),
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 1),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                    parent: animation, curve: Curves.easeOutCubic)),
-                child: const AddExpenseScreen(),
-              ),
-            );
-          },
-          transitionDuration: const Duration(milliseconds: 400),
-          reverseTransitionDuration: const Duration(milliseconds: 300),
+        MaterialPageRoute(
+          fullscreenDialog: false, // Ensure slide-from-right, not slide-up modal
+          builder: (_) => const AddExpenseScreen(),
         ),
       );
       return;
@@ -83,7 +64,7 @@ class _AppShellState extends State<AppShell> {
             opacity: animation,
             child: SlideTransition(
               position: Tween<Offset>(
-                begin: Offset(goingRight ? 0.05 : -0.05, 0),
+                begin: Offset(goingRight ? 0.25 : -0.25, 0),
                 end: Offset.zero,
               ).animate(animation),
               child: child,

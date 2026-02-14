@@ -182,6 +182,12 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         behavior: SnackBarBehavior.floating,
       ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
     );
   }
 
@@ -358,6 +364,12 @@ class AppTheme {
       snackBarTheme: const SnackBarThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         behavior: SnackBarBehavior.floating,
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        },
       ),
     );
   }

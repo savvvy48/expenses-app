@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'core/constants/app_colors.dart';
+import 'core/data/hive_expense_repository.dart';
+import 'core/data/hive_people_repository.dart';
+import 'core/data/migration_helper.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'providers/expense_provider.dart';
@@ -13,6 +16,10 @@ import 'screens/app_shell.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
+
+  // Initialize repositories
+  final expenseRepo = HiveExpenseRepository();
+  final peopleRepo = HivePeopleRepository();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -25,8 +32,8 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => ExpenseProvider()),
-        ChangeNotifierProvider(create: (_) => PeopleProvider()),
+        ChangeNotifierProvider(create: (_) => ExpenseProvider(expenseRepo)),
+        ChangeNotifierProvider(create: (_) => PeopleProvider(peopleRepo)),
         ChangeNotifierProvider(create: (_) => BudgetProvider()),
       ],
       child: const DailyExpensesApp(),
@@ -54,9 +61,17 @@ class _DailyExpensesAppState extends State<DailyExpensesApp> {
     final expProv = context.read<ExpenseProvider>();
     final peopleProv = context.read<PeopleProvider>();
     final budgetProv = context.read<BudgetProvider>();
-    await expProv.init();
-    await peopleProv.init();
-    await budgetProv.init();
+    
+    // Run initializations in parallel
+    await Future.wait([
+      MigrationHelper.checkAndMigrate(),
+      expProv.init(),
+      peopleProv.init(),
+      budgetProv.init(),
+      // Ensure splash shows for at least a moment to prevent flicker
+      Future.delayed(const Duration(milliseconds: 1500)),
+    ]);
+    
     if (mounted) setState(() => _initialized = true);
   }
 
@@ -84,69 +99,57 @@ class _DailyExpensesAppState extends State<DailyExpensesApp> {
   }
 }
 
-class _SplashScreen extends StatefulWidget {
+import 'core/widgets/shimmer_loading.dart';
+
+// ... (imports)
+
+// ... (DailyExpensesApp)
+
+class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
-  @override
-  State<_SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<_SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _scale;
-  late final Animation<double> _opacity;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 800));
-    _scale = Tween<double>(begin: 0.5, end: 1.0)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut));
-    _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
-    _ctrl.forward();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      body: Center(
-        child: FadeTransition(
-          opacity: _opacity,
-          child: ScaleTransition(
-            scale: _scale,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      appBar: AppBar(
+        forceMaterialTransparency: true,
+        title: const ShimmerLoading.rectangular(
+          height: 24,
+          width: 150,
+        ),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 16),
+            child: ShimmerLoading.circular(size: 32),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          children: [
+             SizedBox(height: 16),
+            // Header Balance Card
+             ShimmerCard(height: 180),
+             SizedBox(height: 24),
+             
+            // List Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    boxShadow: AppColors.sharpShadow(isDark),
-                  ),
-                  child: const Icon(Icons.account_balance_wallet_outlined,
-                      color: Colors.white, size: 40),
-                ),
-                const SizedBox(height: 24),
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    color: AppColors.primary,
-                    strokeWidth: 2,
-                  ),
-                ),
+                 ShimmerLoading.rectangular(height: 20, width: 100),
+                 ShimmerLoading.rectangular(height: 20, width: 60),
               ],
             ),
-          ),
+             SizedBox(height: 16),
+            
+            // Transaction List
+            Expanded(
+              child: ShimmerList(itemCount: 6),
+            ),
+          ],
         ),
       ),
     );

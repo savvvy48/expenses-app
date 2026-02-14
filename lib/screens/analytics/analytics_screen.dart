@@ -24,9 +24,32 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final provider = context.watch<ExpenseProvider>();
-    final categoryTotals = provider.categoryTotals;
-    final totalAmount = categoryTotals.values
-        .fold<double>(0, (sum, val) => sum + val);
+    
+    // Get parameters for query
+    final now = DateTime.now();
+    String periodKey = 'Month';
+    if (_selectedPeriod == 0) periodKey = 'Day';
+    if (_selectedPeriod == 1) periodKey = 'Week';
+    
+    // Filter expenses based on selection
+    final filteredExpenses = provider.getExpensesForPeriod(periodKey, now);
+    
+    // Calculate totals from filtered list
+    final categoryTotals = <String, double>{};
+    final personTotals = <String, double>{};
+    double totalAmount = 0;
+
+    for (final e in filteredExpenses) {
+      // Only include expenses, not income
+      if (e.isIncome) continue;
+      
+      totalAmount += e.amount;
+      categoryTotals.update(e.category.id, (v) => v + e.amount, ifAbsent: () => e.amount);
+      
+      for (final split in e.splits) {
+        personTotals.update(split.personId, (v) => v + split.amount, ifAbsent: () => split.amount);
+      }
+    }
 
     return SafeArea(
       bottom: false,
@@ -79,7 +102,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         CountUpText(
                           end: totalAmount,
                           prefix: '\$',
-                          decimals: 0,
+                          decimals: 2,
                           style: theme.textTheme.titleMedium?.copyWith(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w700),
@@ -91,7 +114,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       SizedBox(
                         height: 180,
                         child: Center(
-                          child: Text('No data to display',
+                          child: Text('No expense data for this period',
                               style: theme.textTheme.bodySmall),
                         ),
                       )
@@ -128,7 +151,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                 child: Text(cat.label,
                                     style: theme.textTheme.bodyLarge),
                               ),
-                              Text('\$${e.value.value.toStringAsFixed(0)}',
+                              Text('\$${e.value.value.toStringAsFixed(2)}',
                                   style: theme.textTheme.titleMedium),
                               const SizedBox(width: 8),
                               SizedBox(
@@ -200,7 +223,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                             ?.copyWith(fontSize: 13)),
                                   ]),
                                   Text(
-                                      '\$${e.value.value.toStringAsFixed(0)}',
+                                      '\$${e.value.value.toStringAsFixed(2)}',
                                       style: theme.textTheme.titleMedium
                                           ?.copyWith(fontSize: 13)),
                                 ],
@@ -254,11 +277,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     Text('Spending by Person',
                         style: theme.textTheme.titleMedium),
                     const SizedBox(height: 16),
-                    if (provider.personTotals.isEmpty)
-                      Text('No split expenses',
+                    if (personTotals.isEmpty)
+                      Text('No split expenses for this period',
                           style: theme.textTheme.bodySmall)
                     else
-                      ...provider.personTotals.entries
+                      ...personTotals.entries
                           .toList()
                           .asMap()
                           .entries
@@ -276,7 +299,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                         color: AppColors.primary,
                                         child: Center(
                                           child: Text(
-                                              e.value.key[0].toUpperCase(),
+                                              e.value.key.isNotEmpty ? e.value.key[0].toUpperCase() : '?',
                                               style: const TextStyle(
                                                   color: Colors.white,
                                                   fontWeight:

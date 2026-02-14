@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
 import '../../core/widgets/count_up_text.dart';
@@ -55,7 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
           physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics()),
           slivers: [
-            // Header
+            // Header with Net Balance
             SliverToBoxAdapter(
               child: AnimatedListItem(
                 index: 0,
@@ -67,17 +68,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Daily Expenses',
-                                style: theme.textTheme.headlineMedium?.copyWith(
-                                    fontWeight: FontWeight.w800, fontSize: 28)),
+                            Text('Net Balance',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                    color: theme.textTheme.bodySmall?.color)),
                             const SizedBox(height: 4),
                             CountUpText(
-                              end: expProvider.thisMonthTotal,
-                              prefix: 'Total: \$',
+                              end: expProvider.netBalance,
+                              prefix: '\$',
                               decimals: 2,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w700),
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 32,
+                                  color: expProvider.netBalance >= 0 
+                                    ? AppColors.success 
+                                    : AppColors.error),
                             ),
                           ],
                         ),
@@ -117,8 +121,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
-            // Animated search bar
+            
+            // ... Search Bar (Unchanged) ...
             SliverToBoxAdapter(
               child: AnimatedSize(
                 duration: const Duration(milliseconds: 300),
@@ -186,190 +190,128 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Budget card with animated progress bar
+            // Income vs Expense Row (Replaces Budget Card temporarily or complements it)
+            // For now, let's keep budget card but maybe shrink it or move it? 
+            // The plan said "Update HomeScreen to show income vs expense breakdown"
+            // Let's replace the large budget card with a summary row of Income | Expense
             SliverToBoxAdapter(
               child: AnimatedListItem(
                 index: 1,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      boxShadow: AppColors.sharpShadow(isDark),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('This Month',
-                                style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
-                                    fontSize: 13)),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              color: Colors.white.withValues(alpha: 0.15),
-                              child: Text(
-                                DateFormat('MMMM y').format(DateTime.now()),
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        CountUpText(
-                          end: expProvider.thisMonthTotal,
-                          prefix: '\$',
-                          decimals: 2,
-                          duration: const Duration(milliseconds: 1200),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 36,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -1),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.success.withValues(alpha: 0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Text('Budget used',
-                                      style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.6),
-                                          fontSize: 11)),
-                                  const SizedBox(height: 6),
-                                  // Animated progress bar
-                                  Container(
-                                    height: 6,
-                                    color:
-                                        Colors.white.withValues(alpha: 0.15),
-                                    child: AnimatedFractionallySizedBox(
-                                      alignment: Alignment.centerLeft,
-                                      widthFactor:
-                                          monthlyUtilization.clamp(0.0, 1.0),
-                                      duration:
-                                          const Duration(milliseconds: 800),
-                                      curve: Curves.easeOutCubic,
-                                      child: Container(
-                                        color: budgetProvider
-                                            .budgetColor(monthlyUtilization),
-                                      ),
-                                    ),
-                                  ),
+                                  Icon(Icons.arrow_downward, size: 16, color: AppColors.success),
+                                  const SizedBox(width: 4),
+                                  Text('Income', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
                                 ],
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            TweenAnimationBuilder<double>(
-                              tween: Tween<double>(
-                                  begin: 0,
-                                  end: monthlyUtilization * 100),
-                              duration: const Duration(milliseconds: 800),
-                              curve: Curves.easeOutCubic,
-                              builder: (ctx, val, _) => Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                color: budgetProvider
-                                    .budgetColor(monthlyUtilization)
-                                    .withValues(alpha: 0.2),
-                                child: Text(
-                                  '${val.toInt()}%',
-                                  style: TextStyle(
-                                      color: budgetProvider
-                                          .budgetColor(monthlyUtilization),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700),
-                                ),
+                              const SizedBox(height: 8),
+                              CountUpText(
+                                end: expProvider.totalIncome,
+                                prefix: '+\$',
+                                decimals: 2,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.success),
                               ),
-                            ),
-                          ],
-                        ),
-                        if (monthlyUtilization >= 0.8) ...[
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 5),
-                            color: budgetProvider
-                                .budgetColor(monthlyUtilization)
-                                .withValues(alpha: 0.15),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                    monthlyUtilization >= 1
-                                        ? Icons.warning
-                                        : Icons.info_outline,
-                                    color: budgetProvider
-                                        .budgetColor(monthlyUtilization),
-                                    size: 14),
-                                const SizedBox(width: 6),
-                                Text(
-                                  monthlyUtilization >= 1
-                                      ? 'Over budget!'
-                                      : 'Approaching budget limit',
-                                  style: TextStyle(
-                                      color: budgetProvider
-                                          .budgetColor(monthlyUtilization),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
+                            ],
                           ),
-                        ],
-                      ],
-                    ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.arrow_upward, size: 16, color: AppColors.error),
+                                  const SizedBox(width: 4),
+                                  Text('Expense', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              CountUpText(
+                                end: expProvider.totalSpent,
+                                prefix: '-\$',
+                                decimals: 2,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.error),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-
-            // Quick Stats Row
+            
+            // Budget Summary (Condensed)
             SliverToBoxAdapter(
               child: AnimatedListItem(
                 index: 2,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                          child: _QuickStat(
-                        icon: Icons.today,
-                        label: 'Today',
-                        value: expProvider.todayTotal,
-                        isDark: isDark,
-                        theme: theme,
-                      )),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: _QuickStat(
-                        icon: Icons.repeat,
-                        label: 'Recurring',
-                        value: expProvider.recurringCount.toDouble(),
-                        isDark: isDark,
-                        theme: theme,
-                        isInt: true,
-                      )),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: _QuickStat(
-                        icon: Icons.receipt_long,
-                        label: 'Total',
-                        value: expenses.length.toDouble(),
-                        isDark: isDark,
-                        theme: theme,
-                        isInt: true,
-                      )),
-                    ],
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkCard : AppColors.lightCard,
+                      border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Monthly Budget', style: theme.textTheme.titleSmall),
+                            Text('${(monthlyUtilization * 100).toInt()}% Used', 
+                              style: TextStyle(fontWeight: FontWeight.bold, color: budgetProvider.budgetColor(monthlyUtilization))),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: monthlyUtilization.clamp(0.0, 1.0),
+                            backgroundColor: isDark ? Colors.black26 : Colors.grey.shade200,
+                            valueColor: AlwaysStoppedAnimation(budgetProvider.budgetColor(monthlyUtilization)),
+                            minHeight: 8,
+                          ),
+                        ),
+                        if (monthlyUtilization >= 0.9)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              monthlyUtilization >= 1 ? 'Budget Exceeded!' : 'Approaching Limit',
+                              style: TextStyle(color: AppColors.error, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -444,9 +386,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _deleteExpense(BuildContext context, Expense expense) {
-    HapticFeedback.heavyImpact();
+    
+    // Optimistic remove from UI is handled by Dismissible, but we need to tell provider
+    // However, provider.deleteExpense() removes it from the list. 
+    // If we want to support undo, we should keep a reference or rely on provider's undo.
+    
     context.read<ExpenseProvider>().deleteExpense(expense.id);
-    AppToast.success(context, '${expense.title} deleted');
+
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${expense.title} deleted'),
+        action: SnackBarAction(
+          label: 'Undo',
+          textColor: AppColors.primary,
+          onPressed: () {
+            HapticFeedback.mediumImpact();
+            context.read<ExpenseProvider>().undoDelete();
+          },
+        ),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _viewExpense(BuildContext context, Expense expense) {
@@ -475,92 +437,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// --- Animated Fractionaly Sized Box ---
-class AnimatedFractionallySizedBox extends ImplicitlyAnimatedWidget {
-  final AlignmentGeometry alignment;
-  final double widthFactor;
-  final Widget child;
+// ... (AnimatedFractionallySizedBox removed as it's no longer used in the main view, or keep if needed elsewhere) ...
 
-  const AnimatedFractionallySizedBox({
-    super.key,
-    required this.alignment,
-    required this.widthFactor,
-    required this.child,
-    required super.duration,
-    super.curve,
-  });
-
-  @override
-  AnimatedWidgetBaseState<AnimatedFractionallySizedBox> createState() =>
-      _AnimatedFSBState();
-}
-
-class _AnimatedFSBState
-    extends AnimatedWidgetBaseState<AnimatedFractionallySizedBox> {
-  Tween<double>? _widthFactor;
-
-  @override
-  void forEachTween(TweenVisitor<dynamic> visitor) {
-    _widthFactor = visitor(_widthFactor, widget.widthFactor,
-        (dynamic value) => Tween<double>(begin: value as double)) as Tween<double>?;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FractionallySizedBox(
-      alignment: widget.alignment,
-      widthFactor: _widthFactor?.evaluate(animation) ?? widget.widthFactor,
-      child: widget.child,
-    );
-  }
-}
-
-// --- Quick Stat with CountUp ---
-class _QuickStat extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final double value;
-  final bool isDark;
-  final ThemeData theme;
-  final bool isInt;
-
-  const _QuickStat({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.isDark,
-    required this.theme,
-    this.isInt = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-        boxShadow: AppColors.subtleShadow(isDark),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: AppColors.primary, size: 20),
-          const SizedBox(height: 6),
-          CountUpText(
-            end: value,
-            prefix: isInt ? '' : '\$',
-            decimals: isInt ? 0 : 0,
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: theme.textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
-}
+// --- Quick Stat with CountUp (Removed as replaced by Income/Expense summary) ---
 
 // --- Swipeable Transaction Tile (Swipe to Delete) ---
 class _SwipeableTransactionTile extends StatelessWidget {
@@ -589,12 +468,19 @@ class _SwipeableTransactionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isIncome = expense.isIncome;
+    final amountColor = isIncome ? AppColors.success : AppColors.error;
+    final prefix = isIncome ? '+\$' : '-\$';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Dismissible(
         key: ValueKey(expense.id),
         direction: DismissDirection.endToStart,
-        onDismissed: (_) => onDelete(),
+        onDismissed: (_) {
+          HapticFeedback.heavyImpact();
+          onDelete();
+        },
         background: Container(
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 20),
@@ -675,9 +561,9 @@ class _SwipeableTransactionTile extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('-\$${expense.amount.toStringAsFixed(2)}',
+                    Text('$prefix${expense.amount.toStringAsFixed(2)}',
                         style: theme.textTheme.titleMedium?.copyWith(
-                            color: AppColors.error,
+                            color: amountColor,
                             fontSize: 14,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
@@ -780,6 +666,18 @@ class _ExpenseDetailSheet extends StatelessWidget {
   final Expense expense;
   const _ExpenseDetailSheet({required this.expense});
 
+  void _shareExpense(BuildContext context) {
+    final date = DateFormat.yMMMMEEEEd().format(expense.date);
+    final text = 'Expense Details:\n\n'
+        'Title: ${expense.title}\n'
+        'Amount: \$${expense.amount.toStringAsFixed(2)}\n'
+        'Category: ${expense.category.label}\n'
+        'Date: $date\n'
+        'Payment: ${expense.paymentMethod.label}\n'
+        '${expense.notes != null ? 'Notes: ${expense.notes}\n' : ''}';
+    Share.share(text);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -789,6 +687,10 @@ class _ExpenseDetailSheet extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Expense Details'),
         actions: [
+          IconButton(
+            onPressed: () => _shareExpense(context),
+            icon: const Icon(Icons.share),
+          ),
           IconButton(
             onPressed: () {
               Navigator.pop(context);

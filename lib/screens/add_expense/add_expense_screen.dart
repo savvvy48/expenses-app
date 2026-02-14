@@ -66,6 +66,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
       _splits.addAll(widget.editExpense!.splits);
     }
 
+    _amountCtrl.addListener(() {
+      if (_splits.isNotEmpty) setState(() {});
+    });
+
     _headerCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
     _headerScale = CurvedAnimation(parent: _headerCtrl, curve: Curves.elasticOut);
@@ -95,6 +99,19 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
       return;
     }
 
+    // Validate splits if any (Issue #5)
+    if (!_isIncome && _splits.isNotEmpty) {
+      final splitTotal = _splits.fold<double>(0, (sum, s) => sum + s.amount);
+      if (splitTotal > amount) {
+        HapticFeedback.heavyImpact();
+        AppToast.error(
+            context,
+            'Split total (\$${splitTotal.toStringAsFixed(2)}) exceeds amount (\$${amount.toStringAsFixed(2)})'
+        );
+        return;
+      }
+    }
+
     final provider = context.read<ExpenseProvider>();
     final cat = provider.allCategories.firstWhere(
         (c) => c.id == _selectedCategoryId,
@@ -115,6 +132,40 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
       isIncome: _isIncome,
     );
 
+    // Check daily limit (Issue #28)
+    if (!_isIncome && !_isEditing) {
+      if (provider.isDailyLimitExceeded(amount)) {
+        HapticFeedback.heavyImpact();
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Daily Limit Exceeded'),
+            content: Text(
+                'This expense will push your daily spending over the limit of \$${AppConstants.defaultDailyLimit.toStringAsFixed(0)}.\n\nDo you still want to proceed?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _processSave(provider, expense);
+                },
+                child: const Text('Proceed',
+                    style: TextStyle(color: AppColors.error)),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
+
+    _processSave(provider, expense);
+  }
+
+  void _processSave(ExpenseProvider provider, Expense expense) {
     if (_isEditing) {
       provider.updateExpense(expense);
     } else {
@@ -278,7 +329,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
                                         color: Colors.white.withValues(alpha: 0.3),
                                         fontSize: 40,
                                         fontWeight: FontWeight.w900),
+                                    filled: false,
+                                    fillColor: Colors.transparent,
                                     border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
                                     contentPadding: EdgeInsets.zero,
                                     isDense: true,
                                   ),
@@ -795,6 +850,33 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
                               child: Text('Add people first to split expenses',
                                   style: theme.textTheme.bodySmall),
                             ),
+                          if (_splits.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            // Show "Your Share" calculation (Issue #25)
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.darkBg.withValues(alpha: 0.5)
+                                    : AppColors.lightBg.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Your Share:',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w600)),
+                                  Text(
+                                    '\$${((double.tryParse(_amountCtrl.text.trim()) ?? 0) - _splits.fold<double>(0, (sum, s) => sum + s.amount)).toStringAsFixed(2)}',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                        color: _accentColor,
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

@@ -82,19 +82,34 @@ class SettingsScreen extends StatelessWidget {
           AnimatedListItem(
             index: 5,
             child: _SettingsTile(
-              icon: Icons.warning_amber,
-              iconColor: AppColors.warning,
+              icon: Icons.info_outline,
+              iconColor: AppColors.primary,
               title: 'Budget Alerts',
-              subtitle: 'Alert when nearing budget limit',
+              subtitle: 'Alerts appear automatically when near limits',
               isDark: isDark,
               theme: theme,
-              trailing: Switch.adaptive(
-                value: true,
-                activeTrackColor: AppColors.primary,
-                onChanged: (_) {
-                  HapticFeedback.selectionClick();
-                },
-              ),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                AppToast.info(context, 'Alerts are enabled by default');
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Currency Setting (Issue #6)
+          AnimatedListItem(
+            index: 6,
+            child: _SettingsTile(
+              icon: Icons.attach_money,
+              iconColor: AppColors.success,
+              title: 'Currency',
+              subtitle: 'Select your preferred currency', // In real app, bind to provider
+              isDark: isDark,
+              theme: theme,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                // TODO: Show currency picker dialog and save to settings
+                AppToast.info(context, 'Global currency setting coming soon');
+              },
             ),
           ),
           const SizedBox(height: 16),
