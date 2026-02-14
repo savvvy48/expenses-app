@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants/app_constants.dart';
 import '../core/data/expense_repository.dart';
-import '../core/data/sample_data.dart';
 import '../models/expense.dart';
+import 'package:uuid/uuid.dart';
+
+enum SortOption {
+  dateNewest,
+  dateOldest,
+  amountHighLow,
+  amountLowHigh,
+  categoryAZ,
+}
 
 class ExpenseProvider extends ChangeNotifier {
   final ExpenseRepository _repository;
   
   List<Expense> _expenses = [];
   List<ExpenseCategory> _customCategories = [];
-  Expense? _lastDeleted;
+  List<Expense> _lastDeletedBatch = []; // Stores last deleted items (single or batch)
   String _searchQuery = '';
+  SortOption _currentSort = SortOption.dateNewest;
   String? _filterCategoryId;
   PaymentMethod? _filterPaymentMethod;
   DateTime? _filterStartDate;
@@ -21,38 +29,51 @@ class ExpenseProvider extends ChangeNotifier {
 
   List<Expense> get expenses => _getFilteredExpenses();
   List<Expense> get allExpenses => List.unmodifiable(_expenses);
-  List<ExpenseCategory> get allCategories => [
-        ...ExpenseCategory.defaults,
-        ..._customCategories,
-      ];
-  Expense? get lastDeleted => _lastDeleted;
+  List<ExpenseCategory> get allCategories => [...ExpenseCategory.defaults, ..._customCategories];
+  // ... getters ...
+  SortOption get currentSort => _currentSort;
+  bool get canUndo => _lastDeletedBatch.isNotEmpty;
+  String? get filterCategoryId => _filterCategoryId;
+  PaymentMethod? get filterPaymentMethod => _filterPaymentMethod;
+  bool get hasActiveFilters => _filterCategoryId != null || _filterPaymentMethod != null || _searchQuery.isNotEmpty;
   String get searchQuery => _searchQuery;
 
   Future<void> init() async {
     await _repository.init();
-
     _expenses = _repository.getAllExpenses();
     _customCategories = _repository.getCustomCategories();
-
-    final settingsBox = await Hive.openBox(AppConstants.boxSettings);
-    final isInitialized = settingsBox.get('isInitialized', defaultValue: false);
-    
-    if (!isInitialized) {
-      if (_expenses.isEmpty) {
-        _expenses = SampleData.getExpenses();
-        await _repository.saveAllExpenses(_expenses);
-      }
-      await settingsBox.put('isInitialized', true);
-    }
-    
-    _sortExpenses();
     await _generateRecurringExpenses();
+    _sortExpenses();
     notifyListeners();
   }
 
   void _sortExpenses() {
-    _expenses.sort((a, b) => b.date.compareTo(a.date));
+    switch (_currentSort) {
+      case SortOption.dateNewest:
+        _expenses.sort((a, b) => b.date.compareTo(a.date));
+        break;
+      case SortOption.dateOldest:
+        _expenses.sort((a, b) => a.date.compareTo(b.date));
+        break;
+      case SortOption.amountHighLow:
+        _expenses.sort((a, b) => b.amount.compareTo(a.amount));
+        break;
+      case SortOption.amountLowHigh:
+        _expenses.sort((a, b) => a.amount.compareTo(b.amount));
+        break;
+      case SortOption.categoryAZ:
+        _expenses.sort((a, b) => a.category.label.compareTo(b.category.label));
+        break;
+    }
   }
+  
+  void setSortOption(SortOption option) {
+    _currentSort = option;
+    _sortExpenses();
+    notifyListeners();
+  }
+
+  // ... rest of the class ...
 
   List<Expense> _getFilteredExpenses() {
     var result = List<Expense>.from(_expenses);
@@ -109,11 +130,7 @@ class ExpenseProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get hasActiveFilters =>
-      _searchQuery.isNotEmpty ||
-      _filterCategoryId != null ||
-      _filterPaymentMethod != null ||
-      _filterStartDate != null;
+
 
   // CRUD
   Future<void> addExpense(Expense expense) async {
@@ -136,22 +153,39 @@ class ExpenseProvider extends ChangeNotifier {
   Future<void> deleteExpense(String id) async {
     final idx = _expenses.indexWhere((e) => e.id == id);
     if (idx != -1) {
-      _lastDeleted = _expenses.removeAt(idx);
+      _lastDeletedBatch = [_expenses[idx]]; // Overwrite batch with single item
+      _expenses.removeAt(idx);
       notifyListeners();
       await _repository.deleteExpense(id);
     }
   }
 
+  Future<void> deleteExpenses(List<String> ids) async {
+    _lastDeletedBatch = _expenses.where((e) => ids.contains(e.id)).toList();
+    _expenses.removeWhere((e) => ids.contains(e.id));
+    notifyListeners();
+    for (final id in ids) {
+      await _repository.deleteExpense(id);
+    }
+  }
+
   Future<void> undoDelete() async {
-    if (_lastDeleted != null) {
-      await addExpense(_lastDeleted!);
-      _lastDeleted = null;
+    if (_lastDeletedBatch.isNotEmpty) {
+      for (final expense in _lastDeletedBatch) {
+        await addExpense(expense);
+      }
+      _lastDeletedBatch.clear();
     }
   }
 
   // Category management
-  Future<void> addCategory(ExpenseCategory category) async {
-    _customCategories.add(category);
+  Future<void> saveCategory(ExpenseCategory category) async {
+    final idx = _customCategories.indexWhere((c) => c.id == category.id);
+    if (idx != -1) {
+      _customCategories[idx] = category;
+    } else {
+      _customCategories.add(category);
+    }
     notifyListeners();
     await _repository.saveCategory(category);
   }
@@ -237,34 +271,49 @@ class ExpenseProvider extends ChangeNotifier {
   // Recurring Expenses Logic
   Future<void> _generateRecurringExpenses() async {
     final now = DateTime.now();
-    final recurring = _expenses.where((e) => e.isRecurring).toList();
+    // Snapshot of currently active recurring expenses to iterate safely
+    final initialRecurring = _expenses.where((e) => e.isRecurring).toList();
     bool addedAny = false;
 
-    for (final expense in recurring) {
-      DateTime nextDate = _getNextRecurringDate(expense);
+    for (var expense in initialRecurring) {
+      var current = expense;
       
-      // While the next due date is in the past (including today)
-      while (nextDate.isBefore(now) || nextDate.isAtSameMomentAs(now)) {
-        // Create new instance
-        final newExpense = expense.copyWith(
-          id: const Uuid().v4(),
-          date: nextDate,
-          isRecurring: false, // Instances are not recurring themselves
-          // Link to parent if we had a parentId field, for now just a copy
+      // Loop to catch up all missed active periods
+      while (true) {
+        final nextDate = _getNextRecurringDate(current);
+        
+        // Break if we've caught up to the future
+        // Also break if nextDate didn't advance (safety against infinite loop)
+        if (nextDate.isAfter(now) || !nextDate.isAfter(current.date)) {
+          break;
+        }
+
+        // 1. Archive the current/past due expense (History)
+        // Mark it as non-recurring so it stays as a static record
+        final historicVersion = current.copyWith(
+          isRecurring: false,
         );
         
-        // Add to list but don't save yet to avoid multiple file writes
-        _expenses.insert(0, newExpense);
-        await _repository.saveExpense(newExpense);
-        addedAny = true;
+        // 2. Create the new future/current expense (Active)
+        // Move the recurring flag to this new instance
+        final futureVersion = current.copyWith(
+          id: const Uuid().v4(),
+          date: nextDate,
+          isRecurring: true,
+        );
         
-        // Advance to next period
-        nextDate = _getNextRecurringDate(newExpense.copyWith(date: nextDate, recurringType: expense.recurringType));
+        // Apply changes to database and memory
+        await updateExpense(historicVersion);
+        await addExpense(futureVersion);
+        
+        // Advance the loop to check if the NEW expense is also already due
+        // (e.g. missed multiple months)
+        current = futureVersion;
+        addedAny = true;
       }
     }
     
     if (addedAny) {
-      _sortExpenses();
       notifyListeners();
     }
   }
@@ -284,40 +333,7 @@ class ExpenseProvider extends ChangeNotifier {
     }
   }
 
-  List<Expense> _getFilteredExpenses() {
-    var result = List<Expense>.from(_expenses);
-    
-    // 1. Search (Title, Notes, Payment Method Label, Category Label)
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      result = result.where((e) =>
-          e.title.toLowerCase().contains(q) ||
-          (e.notes?.toLowerCase().contains(q) ?? false) ||
-          e.paymentMethod.label.toLowerCase().contains(q) ||
-          e.category.label.toLowerCase().contains(q)).toList();
-    }
 
-    // 2. Category Filter
-    if (_filterCategoryId != null) {
-      result = result.where((e) => e.category.id == _filterCategoryId).toList();
-    }
-
-    // 3. Payment Method Filter
-    if (_filterPaymentMethod != null) {
-      result = result.where((e) => e.paymentMethod == _filterPaymentMethod).toList();
-    }
-
-    // 4. Date Range Filter
-    if (_filterStartDate != null) {
-      result = result.where((e) => !e.date.isBefore(_filterStartDate!)).toList();
-    }
-    if (_filterEndDate != null) {
-      result = result.where((e) => !e.date.isAfter(
-          _filterEndDate!.add(const Duration(days: 1)))).toList();
-    }
-    
-    return result;
-  }
 
 
   Map<String, double> get categoryTotals {

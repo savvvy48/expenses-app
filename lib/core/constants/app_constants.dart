@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+
 
 class AppConstants {
   // Animation Durations
@@ -35,4 +35,5 @@ class AppConstants {
   // Limits
   static const int maxNotesLength = 500;
   static const int maxTitleLength = 50;
+  static const double defaultDailyLimit = 100.0;
 }

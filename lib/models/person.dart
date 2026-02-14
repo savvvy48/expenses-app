@@ -11,6 +11,12 @@ class Person {
   final int? expiresInDays;
   final int avatarColorValue;
 
+  static const List<int> avatarColors = [
+    0xFFFF7675, 0xFF6C5CE7, 0xFF00B894, 0xFFFDCB6E, 
+    0xFFE17055, 0xFF55EFC4, 0xFFA29BFE, 0xFFFD79A8,
+    0xFF636E72, 0xFF0984E3, 0xFFD63031, 0xFFE84393
+  ];
+
   Person({
     required this.id,
     required this.name,
@@ -19,7 +25,7 @@ class Person {
     this.status = PersonStatus.active,
     this.expiresInDays,
     int? avatarColorValue,
-  }) : avatarColorValue = avatarColorValue ?? 0xFF2463EB;
+  }) : avatarColorValue = avatarColorValue ?? avatarColors[name.hashCode.abs() % avatarColors.length];
 
   String get initials {
     final parts = name.trim().split(' ');

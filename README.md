@@ -1,4 +1,4 @@
-# Daily Expenses App 💰
+# SavvySpend 💰
 
 A modern, feature-rich Flutter application for tracking personal finances, managing budgets, and handling shared expenses with ease. Built with performance and user experience in mind, utilizing local storage for privacy and speed.
 

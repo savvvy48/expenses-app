@@ -9,6 +9,10 @@ import '../../core/utils/app_feedback.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/budget_provider.dart';
+import '../../core/services/export_service.dart';
+
+import 'manage_categories_screen.dart';
+import '../../core/widgets/toast.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -111,6 +115,23 @@ class SettingsScreen extends StatelessWidget {
               },
             ),
           ),
+          const SizedBox(height: 8),
+          // Manage Categories
+          AnimatedListItem(
+            index: 6, 
+            child: _SettingsTile(
+              icon: Icons.category_rounded,
+              iconColor: AppColors.fun,
+              title: 'Categories',
+              subtitle: 'Add or edit custom categories',
+              isDark: isDark,
+              theme: theme,
+              onTap: () {
+                AppFeedback.onTap();
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageCategoriesScreen()));
+              },
+            ),
+          ),
           const SizedBox(height: 16),
 
           // Budget section
@@ -156,8 +177,10 @@ class SettingsScreen extends StatelessWidget {
               subtitle: 'Export and share your expenses',
               isDark: isDark,
               theme: theme,
-              onTap: () {
-                AppFeedback.warning(context, 'Share feature coming soon');
+              onTap: () async {
+                AppFeedback.onTap();
+                final expenses = context.read<ExpenseProvider>().allExpenses;
+                await ExportService.shareSummary(expenses);
               },
             ),
           ),
@@ -171,8 +194,10 @@ class SettingsScreen extends StatelessWidget {
               subtitle: 'Download expenses as spreadsheet',
               isDark: isDark,
               theme: theme,
-              onTap: () {
-                AppFeedback.warning(context, 'Export feature coming soon');
+              onTap: () async {
+                AppFeedback.onTap();
+                final expenses = context.read<ExpenseProvider>().allExpenses;
+                await ExportService.exportCSV(expenses);
               },
             ),
           ),
@@ -180,19 +205,22 @@ class SettingsScreen extends StatelessWidget {
           AnimatedListItem(
             index: 12,
             child: _SettingsTile(
-              icon: Icons.cloud_upload_outlined,
+              icon: Icons.cloud_download_outlined,
               iconColor: AppColors.shopping,
-              title: 'Auto Backup',
-              subtitle: 'Automatically backup your data',
+              title: 'Backup Data',
+              subtitle: 'Export data as JSON backup',
               isDark: isDark,
               theme: theme,
-              trailing: Switch.adaptive(
-                value: false,
-                activeTrackColor: AppColors.primary,
-                onChanged: (_) {
-                  AppFeedback.warning(context, 'Backup coming soon');
-                },
-              ),
+              onTap: () async {
+                AppFeedback.onTap();
+                final provider = context.read<ExpenseProvider>();
+                // We need custom categories separately.
+                // provider.allCategories includes defaults.
+                // But provider doesn't expose _customCategories directly?
+                // Wait, I can filter allCategories.
+                final customCats = provider.allCategories.where((c) => c.isCustom).toList();
+                await ExportService.exportJSONBackup(provider.allExpenses, customCats);
+              },
             ),
           ),
           const SizedBox(height: 16),

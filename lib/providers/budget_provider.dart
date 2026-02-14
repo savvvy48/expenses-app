@@ -56,6 +56,14 @@ class BudgetProvider extends ChangeNotifier {
     }
   }
 
+  Color budgetColor(double utilization) {
+    if (utilization >= 1.0) return statusColor(BudgetStatus.exceeded);
+    if (utilization >= 0.9) return statusColor(BudgetStatus.critical);
+    if (utilization >= 0.75) return statusColor(BudgetStatus.warning);
+    if (utilization >= 0.5) return statusColor(BudgetStatus.notice);
+    return statusColor(BudgetStatus.safe);
+  }
+
   Future<void> setMonthlyLimit(double limit) async {
     _budget = _budget.copyWith(monthlyLimit: limit);
     await _save();

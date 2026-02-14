@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../utils/app_haptics.dart';
 
 /// A button with spring-scale physics, ripple effect, and haptic feedback.
 class SpringButton extends StatefulWidget {
@@ -7,6 +7,7 @@ class SpringButton extends StatefulWidget {
   final VoidCallback? onTap;
   final double scaleFactor;
   final bool enableHaptic;
+  final String? semanticLabel;
 
   const SpringButton({
     super.key,
@@ -14,6 +15,7 @@ class SpringButton extends StatefulWidget {
     this.onTap,
     this.scaleFactor = 0.95,
     this.enableHaptic = true,
+    this.semanticLabel,
   });
 
   @override
@@ -49,7 +51,7 @@ class _SpringButtonState extends State<SpringButton>
 
   void _onTapUp(TapUpDetails _) {
     _ctrl.reverse();
-    if (widget.enableHaptic) HapticFeedback.lightImpact();
+    if (widget.enableHaptic) AppHaptics.onTap();
     widget.onTap?.call();
   }
 
@@ -57,7 +59,7 @@ class _SpringButtonState extends State<SpringButton>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    Widget button = GestureDetector(
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
       onTapCancel: _onTapCancel,
@@ -66,5 +68,15 @@ class _SpringButtonState extends State<SpringButton>
         child: widget.child,
       ),
     );
+
+    if (widget.semanticLabel != null) {
+      button = Semantics(
+        label: widget.semanticLabel,
+        button: true,
+        child: button,
+      );
+    }
+
+    return button;
   }
 }

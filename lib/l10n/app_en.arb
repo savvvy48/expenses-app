@@ -1,0 +1,171 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Daily Expenses",
+  "@appTitle": { "description": "App title displayed in the app bar" },
+
+  "netBalance": "Net Balance",
+  "@netBalance": { "description": "Label for the net balance section" },
+
+  "recentActivity": "Recent Activity",
+  "@recentActivity": { "description": "Header for the recent transactions list" },
+
+  "noTransactions": "No transactions yet",
+  "@noTransactions": { "description": "Empty state title when no transactions exist" },
+
+  "startTracking": "Tap + to add your first expense",
+  "@startTracking": { "description": "Empty state subtitle" },
+
+  "addExpense": "Add Expense",
+  "@addExpense": { "description": "FAB and screen title for adding an expense" },
+
+  "editExpense": "Edit Expense",
+  "@editExpense": { "description": "Screen title for editing an expense" },
+
+  "deleteSelected": "Delete Selected?",
+  "@deleteSelected": { "description": "Confirmation dialog title for bulk delete" },
+
+  "deleteConfirmation": "Are you sure you want to delete {count} transaction(s)?",
+  "@deleteConfirmation": {
+    "description": "Confirmation message for bulk delete",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "cancel": "Cancel",
+  "@cancel": { "description": "Cancel button label" },
+
+  "delete": "Delete",
+  "@delete": { "description": "Delete button label" },
+
+  "save": "Save",
+  "@save": { "description": "Save button label" },
+
+  "undo": "Undo",
+  "@undo": { "description": "Undo action label" },
+
+  "deleted": "{title} deleted",
+  "@deleted": {
+    "description": "Snackbar message after deleting an expense",
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+
+  "filterExpenses": "Filter Expenses",
+  "@filterExpenses": { "description": "Filter sheet title" },
+
+  "clearFilters": "Clear Filters",
+  "@clearFilters": { "description": "Button to clear all active filters" },
+
+  "searchExpenses": "Search expenses...",
+  "@searchExpenses": { "description": "Search field placeholder" },
+
+  "categories": "Categories",
+  "@categories": { "description": "Category section header" },
+
+  "paymentMethod": "Payment Method",
+  "@paymentMethod": { "description": "Payment method section header" },
+
+  "amount": "Amount",
+  "@amount": { "description": "Amount field label" },
+
+  "title": "Title",
+  "@title": { "description": "Title field label" },
+
+  "date": "Date",
+  "@date": { "description": "Date field label" },
+
+  "notes": "Notes",
+  "@notes": { "description": "Notes field label" },
+
+  "selectDate": "Select transaction date",
+  "@selectDate": { "description": "Date picker help text" },
+
+  "income": "Income",
+  "@income": { "description": "Income toggle label" },
+
+  "expense": "Expense",
+  "@expense": { "description": "Expense toggle label" },
+
+  "recurring": "Recurring",
+  "@recurring": { "description": "Recurring toggle label" },
+
+  "splitExpense": "Split Expense",
+  "@splitExpense": { "description": "Split expense section header" },
+
+  "saveAsTemplate": "Save as Template",
+  "@saveAsTemplate": { "description": "Save as template button label" },
+
+  "templates": "Templates",
+  "@templates": { "description": "Templates screen title" },
+
+  "noTemplatesYet": "No templates yet",
+  "@noTemplatesYet": { "description": "Empty state for templates screen" },
+
+  "saveTemplateHint": "Save an expense as template to see it here",
+  "@saveTemplateHint": { "description": "Empty state subtitle for templates" },
+
+  "analytics": "Analytics",
+  "@analytics": { "description": "Analytics screen title" },
+
+  "settings": "Settings",
+  "@settings": { "description": "Settings screen title" },
+
+  "people": "People",
+  "@people": { "description": "People screen title" },
+
+  "home": "Home",
+  "@home": { "description": "Home tab label" },
+
+  "darkMode": "Dark Mode",
+  "@darkMode": { "description": "Dark mode toggle label" },
+
+  "exportData": "Export Data",
+  "@exportData": { "description": "Export data button label" },
+
+  "backupData": "Backup Data",
+  "@backupData": { "description": "Backup data button label" },
+
+  "restoreData": "Restore Data",
+  "@restoreData": { "description": "Restore data button label" },
+
+  "manageCategories": "Manage Categories",
+  "@manageCategories": { "description": "Category management button label" },
+
+  "monthlyBudget": "Monthly Budget",
+  "@monthlyBudget": { "description": "Monthly budget section header" },
+
+  "dailyBudget": "Daily Budget",
+  "@dailyBudget": { "description": "Daily budget section header" },
+
+  "noPeopleYet": "No people added yet",
+  "@noPeopleYet": { "description": "Empty state for people screen" },
+
+  "addPeopleHint": "People involved in split expenses will appear here",
+  "@addPeopleHint": { "description": "Empty state subtitle for people" },
+
+  "totalSpent": "Total Spent",
+  "@totalSpent": { "description": "Total spent label in analytics" },
+
+  "thisMonth": "This Month",
+  "@thisMonth": { "description": "This month filter label" },
+
+  "thisWeek": "This Week",
+  "@thisWeek": { "description": "This week filter label" },
+
+  "today": "Today",
+  "@today": { "description": "Today filter label" },
+
+  "allTime": "All Time",
+  "@allTime": { "description": "All time filter label" },
+
+  "selected": "{count} selected",
+  "@selected": {
+    "description": "Selection count label",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  }
+}

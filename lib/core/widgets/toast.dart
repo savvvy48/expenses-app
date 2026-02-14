@@ -18,6 +18,11 @@ class AppToast {
     _show(context, message, AppColors.warning, Icons.warning_amber);
   }
 
+  /// Show an info toast (blue, with info icon)
+  static void info(BuildContext context, String message) {
+    _show(context, message, AppColors.info, Icons.info_outline);
+  }
+
   static void _show(
       BuildContext context, String message, Color color, IconData icon) {
     final overlay = Overlay.of(context);

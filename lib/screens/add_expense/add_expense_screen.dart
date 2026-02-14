@@ -1,24 +1,30 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
 import '../../core/widgets/shake_widget.dart';
 import '../../core/widgets/spring_button.dart';
 import '../../core/widgets/success_overlay.dart';
 import '../../core/utils/app_feedback.dart';
-import '../../core/theme/theme_provider.dart';
+import '../../core/utils/app_haptics.dart';
+
 import '../../core/widgets/toast.dart';
 import '../../models/expense.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/people_provider.dart';
+import '../templates/templates_screen.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final Expense? editExpense;
-  const AddExpenseScreen({super.key, this.editExpense});
+  final Expense? template;
+  const AddExpenseScreen({super.key, this.editExpense, this.template});
 
   @override
   State<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -41,6 +47,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
   RecurringType _recurringType = RecurringType.monthly;
   final List<ExpenseSplit> _splits = [];
   bool _isEditing = false;
+  
+  // Attachments & Template
+  final List<String> _receiptPaths = [];
+  bool _isTemplate = false;
 
   // Animation
   late final AnimationController _headerCtrl;
@@ -49,23 +59,27 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
   @override
   void initState() {
     super.initState();
+    final initialData = widget.editExpense ?? widget.template;
+    
     _isEditing = widget.editExpense != null;
-    _titleCtrl = TextEditingController(text: widget.editExpense?.title ?? '');
+    _titleCtrl = TextEditingController(text: initialData?.title ?? '');
     _amountCtrl = TextEditingController(
-        text: widget.editExpense != null
-            ? widget.editExpense!.amount.toString()
+        text: initialData != null
+            ? initialData.amount.toString()
             : '');
-    _notesCtrl = TextEditingController(text: widget.editExpense?.notes ?? '');
+    _notesCtrl = TextEditingController(text: initialData?.notes ?? '');
 
-    if (_isEditing) {
-      _isIncome = widget.editExpense!.isIncome;
-      _selectedCategoryId = widget.editExpense!.category.id;
-      _selectedPayment = widget.editExpense!.paymentMethod;
-      _currency = widget.editExpense!.currency;
-      _selectedDate = widget.editExpense!.date;
-      _isRecurring = widget.editExpense!.isRecurring;
-      _recurringType = widget.editExpense!.recurringType;
-      _splits.addAll(widget.editExpense!.splits);
+    if (initialData != null) {
+      _isIncome = initialData.isIncome;
+      _selectedCategoryId = initialData.category.id;
+      _selectedPayment = initialData.paymentMethod;
+      _currency = initialData.currency;
+      _selectedDate = widget.editExpense != null ? initialData.date : DateTime.now();
+      _isRecurring = initialData.isRecurring;
+      _recurringType = initialData.recurringType;
+      _splits.addAll(initialData.splits);
+      _receiptPaths.addAll(initialData.receiptPaths);
+      _isTemplate = widget.editExpense != null ? initialData.isTemplate : false;
     }
 
     _amountCtrl.addListener(() {
@@ -89,6 +103,20 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
 
   Color get _accentColor =>
       _isIncome ? AppColors.success : AppColors.primary;
+
+  Future<void> _pickImage() async {
+    HapticFeedback.selectionClick();
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() => _receiptPaths.add(pickedFile.path));
+    }
+  }
+
+  void _removeImage(int index) {
+    AppFeedback.onDelete();
+    setState(() => _receiptPaths.removeAt(index));
+  }
 
   void _save() {
     final title = _titleCtrl.text.trim();
@@ -131,6 +159,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
       recurringType: _recurringType,
       splits: List.from(_splits),
       isIncome: _isIncome,
+      receiptPaths: List.from(_receiptPaths),
+      isTemplate: _isTemplate,
     );
 
     // Check daily limit (Issue #28)
@@ -245,7 +275,30 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(width: 40),
+                            _isEditing
+                                ? const SizedBox(width: 40)
+                                : SpringButton(
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const TemplatesScreen()),
+                                      );
+                                    },
+                                    child: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Icon(Icons.copy_all_rounded,
+                                          color: Colors.white, size: 20),
+                                    ),
+                                  ),
                           ],
                         ),
                         const SizedBox(height: 20),
@@ -640,6 +693,88 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
                 ),
                 const SizedBox(height: 14),
 
+                // ─── Attachments ───
+                AnimatedListItem(
+                  index: 4,
+                  child: _FormSection(
+                    isDark: isDark,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(children: [
+                              Icon(Icons.attachment_rounded,
+                                  size: 16, color: _accentColor),
+                              const SizedBox(width: 8),
+                              Text('Attachments',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600)),
+                            ]),
+                            SpringButton(
+                              onTap: _pickImage,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: _accentColor),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text('+ Add', style: TextStyle(color: _accentColor, fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_receiptPaths.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 80,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _receiptPaths.length,
+                              separatorBuilder: (context, index) => const SizedBox(width: 8),
+                              itemBuilder: (ctx, i) {
+                                final path = _receiptPaths[i];
+                                return Stack(
+                                  children: [
+                                    Container(
+                                      width: 80,
+                                      height: 80,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        image: DecorationImage(
+                                          image: FileImage(File(path)),
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 4,
+                                      right: 4,
+                                      child: GestureDetector(
+                                        onTap: () => _removeImage(i),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.black54,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.close, color: Colors.white, size: 12),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
                 // ─── Recurring Toggle ───
                 AnimatedListItem(
                   index: 4,
@@ -882,6 +1017,34 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
                       ),
                     ),
                   ),
+                const SizedBox(height: 14),
+                
+                // ─── Save as Template ───
+                AnimatedListItem(
+                  index: 6,
+                  child: _FormSection(
+                    isDark: isDark,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.save_as_outlined, size: 16, color: _accentColor),
+                          const SizedBox(width: 8),
+                          Text('Save as Template',
+                              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                        ]),
+                        Switch.adaptive(
+                          value: _isTemplate,
+                          activeTrackColor: _accentColor,
+                          onChanged: (v) {
+                            HapticFeedback.selectionClick();
+                            setState(() => _isTemplate = v);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 28),
 
                 // ─── Action Buttons ───
@@ -958,12 +1121,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen>
   }
 
   Future<void> _pickDate(BuildContext context) async {
-    HapticFeedback.selectionClick();
+    AppHaptics.onSelection();
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Select transaction date',
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);

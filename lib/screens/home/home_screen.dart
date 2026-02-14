@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -7,10 +8,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
 import '../../core/widgets/count_up_text.dart';
 import '../../core/widgets/spring_button.dart';
-import '../../core/widgets/toast.dart';
 import '../../core/widgets/empty_state_widget.dart';
-import '../../core/widgets/budget_warning_widget.dart';
-import '../../core/theme/theme_provider.dart';
+import '../../core/utils/app_feedback.dart';
 import '../../models/expense.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/budget_provider.dart';
@@ -26,11 +25,71 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   bool _showSearch = false;
+  bool _isSelectionMode = false;
+  final Set<String> _selectedIds = {};
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _toggleSelection(String id) {
+    AppFeedback.onSelection();
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        if (_selectedIds.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _enterSelectionMode(String id) {
+    AppFeedback.onSelection();
+    setState(() {
+      _isSelectionMode = true;
+      _selectedIds.add(id);
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+  
+  void _deleteSelected() {
+    final count = _selectedIds.length;
+    if (count == 0) return;
+    
+    AppFeedback.onDelete();
+    final provider = context.read<ExpenseProvider>();
+    final idsToDelete = _selectedIds.toList();
+    
+    provider.deleteExpenses(idsToDelete);
+    _exitSelectionMode();
+    
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$count transactions deleted'),
+        action: SnackBarAction(
+          label: 'Undo',
+          textColor: AppColors.primary,
+          onPressed: () {
+            AppFeedback.onTap();
+            provider.undoDelete();
+          },
+        ),
+        duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _onRefresh() async {
@@ -49,9 +108,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final monthlyUtilization =
         budgetProvider.monthlyUtilization(expProvider.thisMonthTotal);
 
-    return SafeArea(
-      bottom: false,
-      child: RefreshIndicator(
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
         onRefresh: _onRefresh,
         color: AppColors.primary,
         backgroundColor: isDark ? AppColors.darkCard : AppColors.lightCard,
@@ -89,6 +150,35 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
+                      SpringButton(
+                        semanticLabel: 'Filter expenses',
+                        onTap: () =>
+                            _showFilterSheet(context, expProvider),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: expProvider.hasActiveFilters
+                                  ? AppColors.primary
+                                  : isDark
+                                      ? AppColors.darkBorder
+                                      : AppColors.lightBorder,
+                            ),
+                            color: expProvider.hasActiveFilters
+                                ? AppColors.primary.withValues(alpha: 0.1)
+                                : isDark
+                                    ? AppColors.darkCard
+                                    : AppColors.lightCard,
+                          ),
+                          child: Icon(Icons.tune,
+                              size: 20,
+                              color: expProvider.hasActiveFilters
+                                  ? AppColors.primary
+                                  : null),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       SpringButton(
                         onTap: () => setState(() {
                           _showSearch = !_showSearch;
@@ -157,42 +247,66 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            SpringButton(
-                              onTap: () =>
-                                  _showFilterSheet(context, expProvider),
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: expProvider.hasActiveFilters
-                                        ? AppColors.primary
-                                        : isDark
-                                            ? AppColors.darkBorder
-                                            : AppColors.lightBorder,
-                                    width: 2,
-                                  ),
-                                  color: expProvider.hasActiveFilters
-                                      ? AppColors.primary
-                                          .withValues(alpha: 0.1)
-                                      : isDark
-                                          ? AppColors.darkCard
-                                          : AppColors.lightCard,
-                                ),
-                                child: Icon(Icons.tune,
-                                    size: 20,
-                                    color: expProvider.hasActiveFilters
-                                        ? AppColors.primary
-                                        : null),
-                              ),
-                            ),
+                            // Filter button moved to header
                           ],
                         ),
                       )
                     : const SizedBox.shrink(),
               ),
             ),
-
+            
+            // Sort Options
+            SliverToBoxAdapter(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Text('Sort:', style: theme.textTheme.bodySmall),
+                    const SizedBox(width: 8),
+                    ...[
+                      (label: 'Date ↓', opt: SortOption.dateNewest),
+                      (label: 'Date ↑', opt: SortOption.dateOldest),
+                      (label: 'Amt ↓', opt: SortOption.amountHighLow),
+                      (label: 'Amt ↑', opt: SortOption.amountLowHigh),
+                      (label: 'Cat', opt: SortOption.categoryAZ),
+                    ].map((e) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(e.label),
+                            labelStyle: TextStyle(
+                              fontSize: 12,
+                              color: expProvider.currentSort == e.opt
+                                  ? Colors.white
+                                  : isDark
+                                      ? Colors.white
+                                      : Colors.black,
+                            ),
+                            selected: expProvider.currentSort == e.opt,
+                            selectedColor: AppColors.primary,
+                            backgroundColor: isDark
+                                ? AppColors.darkCard
+                                : AppColors.lightCard,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              side: BorderSide(
+                                color: expProvider.currentSort == e.opt
+                                    ? Colors.transparent
+                                    : isDark
+                                        ? AppColors.darkBorder
+                                        : AppColors.lightBorder,
+                              ),
+                            ),
+                            onSelected: (_) {
+                              AppFeedback.onSelection();
+                              expProvider.setSortOption(e.opt);
+                            },
+                          ),
+                        )),
+                  ],
+                ),
+              ),
+            ),
             // Income vs Expense Row (Replaces Budget Card temporarily or complements it)
             // For now, let's keep budget card but maybe shrink it or move it? 
             // The plan said "Update HomeScreen to show income vs expense breakdown"
@@ -376,9 +490,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               expense: expense,
                               isDark: isDark,
                               theme: theme,
-                              onDelete: () =>
-                                  _deleteExpense(context, expense),
-                              onTap: () => _viewExpense(context, expense),
+                              isSelectionMode: _isSelectionMode,
+                              isSelected: _selectedIds.contains(expense.id),
+                              onDelete: () => _deleteExpense(context, expense),
+                              onTap: () {
+                                if (_isSelectionMode) {
+                                  _toggleSelection(expense.id);
+                                } else {
+                                  _viewExpense(context, expense);
+                                }
+                              },
+                              onLongPress: () => _enterSelectionMode(expense.id),
                             ),
                           );
                         },
@@ -389,8 +511,68 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+    floatingActionButton: _isSelectionMode
+          ? null
+          : Semantics(
+              label: 'Add new expense',
+              button: true,
+              child: FloatingActionButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (ctx) => const AddExpenseScreen()),
+              ),
+              backgroundColor: AppColors.primary,
+              child: const Icon(Icons.add, color: Colors.white),
+            ),
+          ),
+      bottomNavigationBar: _isSelectionMode
+          ? BottomAppBar(
+              color: isDark ? AppColors.darkCard : AppColors.lightCard,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    TextButton(
+                      onPressed: _exitSelectionMode,
+                      child: const Text('Cancel'),
+                    ),
+                    const Spacer(),
+                    Text('${_selectedIds.length} selected',
+                        style: theme.textTheme.titleMedium),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Delete Selected?'),
+                            content: Text(
+                                'Are you sure you want to delete ${_selectedIds.length} transaction(s)?'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('Cancel')),
+                              TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _deleteSelected();
+                                  },
+                                  child: const Text('Delete',
+                                      style: TextStyle(color: AppColors.error))),
+                            ],
+                          ),
+                        );
+                      },
+                      child: const Text('Delete',
+                          style: TextStyle(color: AppColors.error)),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
+  );
+}
 
   void _deleteExpense(BuildContext context, Expense expense) {
     
@@ -453,15 +635,21 @@ class _SwipeableTransactionTile extends StatelessWidget {
   final Expense expense;
   final bool isDark;
   final ThemeData theme;
+  final bool isSelectionMode;
+  final bool isSelected;
   final VoidCallback onDelete;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   const _SwipeableTransactionTile({
     required this.expense,
     required this.isDark,
     required this.theme,
+    required this.isSelectionMode,
+    required this.isSelected,
     required this.onDelete,
     required this.onTap,
+    required this.onLongPress,
   });
 
   String _formatDate(DateTime date) {
@@ -479,11 +667,70 @@ class _SwipeableTransactionTile extends StatelessWidget {
     final amountColor = isIncome ? AppColors.success : AppColors.error;
     final prefix = isIncome ? '+\$' : '-\$';
 
+    if (isSelectionMode) {
+      return GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: 0.1)
+                : (isDark ? AppColors.darkCard : AppColors.lightCard),
+            border: _getBorder(),
+          ),
+          child: Row(
+            children: [
+              // Checkbox Overlay
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  border: isSelected
+                      ? null
+                      : Border.all(
+                          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: isSelected
+                    ? const Icon(Icons.check, color: Colors.white)
+                    : Icon(expense.category.icon,
+                        color: expense.category.color.withValues(alpha: 0.5), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: _buildContent(amountColor, prefix)),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Dismissible(
         key: ValueKey(expense.id),
         direction: DismissDirection.endToStart,
+        confirmDismiss: (direction) async {
+          AppFeedback.onSelection();
+          return await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Delete Expense?'),
+              content: Text('Are you sure you want to delete "${expense.title}"?'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Delete',
+                        style: TextStyle(color: AppColors.error))),
+              ],
+            ),
+          );
+        },
         onDismissed: (_) {
           AppFeedback.heavyImpact();
           onDelete();
@@ -496,105 +743,134 @@ class _SwipeableTransactionTile extends StatelessWidget {
         ),
         child: GestureDetector(
           onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkCard : AppColors.lightCard,
-              border: Border.all(
-                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  color: expense.category.color.withValues(alpha: 0.12),
-                  child: Icon(expense.category.icon,
-                      color: expense.category.color, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(expense.title,
-                                style: theme.textTheme.titleMedium
-                                    ?.copyWith(fontSize: 14)),
-                          ),
-                          if (expense.isRecurring)
-                            const Icon(Icons.repeat,
-                                size: 14, color: AppColors.housing),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            color:
-                                expense.category.color.withValues(alpha: 0.1),
-                            child: Text(expense.category.label,
-                                style: TextStyle(
-                                    color: expense.category.color,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600)),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(_formatDate(expense.date),
-                              style: theme.textTheme.bodySmall),
-                          if (expense.splits.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              child: const Text('Split',
-                                  style: TextStyle(
-                                      color: AppColors.primary,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600)),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('$prefix${expense.amount.toStringAsFixed(2)}',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                            color: amountColor,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(expense.paymentMethod.icon,
-                            size: 12,
-                            color: isDark
-                                ? AppColors.darkTextTertiary
-                                : AppColors.lightTextTertiary),
-                        const SizedBox(width: 3),
-                        Text(expense.paymentMethod.label,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(fontSize: 10)),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          child: _buildTileContent(amountColor, prefix),
         ),
       ),
+    );
+  }
+
+  BoxBorder _getBorder() {
+    if (isSelected) return Border.all(color: AppColors.primary, width: 2);
+    return Border(
+      top: BorderSide(
+          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+      bottom: BorderSide(
+          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+      right: BorderSide(
+          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+      left: expense.isRecurring
+          ? const BorderSide(color: AppColors.housing, width: 4)
+          : BorderSide(
+              color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+    );
+  }
+
+  Widget _buildTileContent(Color amountColor, String prefix) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+        border: _getBorder(),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            color: expense.category.color.withValues(alpha: 0.12),
+            child: Icon(expense.category.icon,
+                color: expense.category.color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: _buildContent(amountColor, prefix)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(Color amountColor, String prefix) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(expense.title,
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontSize: 14)),
+                  ),
+                  if (expense.isRecurring)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6),
+                      child: Icon(Icons.repeat,
+                          size: 16, color: AppColors.housing),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    color: expense.category.color.withValues(alpha: 0.1),
+                    child: Text(expense.category.label,
+                        style: TextStyle(
+                            color: expense.category.color,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(_formatDate(expense.date),
+                      style: theme.textTheme.bodySmall),
+                  if (expense.splits.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      child: const Text('Split',
+                          style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text('$prefix${expense.amount.toStringAsFixed(2)}',
+                style: theme.textTheme.titleMedium?.copyWith(
+                    color: amountColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(expense.paymentMethod.icon,
+                    size: 16,
+                    color: isDark
+                        ? AppColors.darkTextTertiary
+                        : AppColors.lightTextTertiary),
+                const SizedBox(width: 3),
+                Text(expense.paymentMethod.label,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(fontSize: 10)),
+              ],
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -834,16 +1110,16 @@ class _FilterSheet extends StatelessWidget {
             children: [
               _FilterChip(
                   label: 'All',
-                  selected: provider.searchQuery.isEmpty,
+                  isSelected: !provider.hasActiveFilters,
                   onTap: () {
                     AppFeedback.onSelection();
-                    provider.setFilterCategory(null);
+                    provider.clearFilters();
                     Navigator.pop(context);
                   },
                   isDark: isDark),
-              ...ExpenseCategory.defaults.map((cat) => _FilterChip(
+              ...provider.allCategories.map((cat) => _FilterChip(
                     label: cat.label,
-                    selected: provider.searchQuery == cat.id,
+                    isSelected: provider.filterCategoryId == cat.id,
                     color: cat.color,
                     onTap: () {
                       AppFeedback.onSelection();
@@ -863,7 +1139,7 @@ class _FilterSheet extends StatelessWidget {
             children: PaymentMethod.values
                 .map((m) => _FilterChip(
                       label: m.label,
-                      selected: provider.searchQuery == m.id,
+                      isSelected: provider.filterPaymentMethod == m,
                       onTap: () {
                         AppFeedback.onSelection();
                         provider.setFilterPaymentMethod(m);
@@ -882,14 +1158,14 @@ class _FilterSheet extends StatelessWidget {
 
 class _FilterChip extends StatelessWidget {
   final String label;
-  final bool selected;
+  final bool isSelected;
   final Color? color;
   final VoidCallback onTap;
   final bool isDark;
 
   const _FilterChip({
     required this.label,
-    required this.selected,
+    required this.isSelected,
     this.color,
     required this.onTap,
     required this.isDark,
@@ -902,24 +1178,24 @@ class _FilterChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
+          color: isSelected
               ? AppColors.primary.withValues(alpha: 0.1)
               : isDark
                   ? AppColors.darkCard
                   : AppColors.lightCard,
           border: Border.all(
-            color: selected
+            color: isSelected
                 ? AppColors.primary
                 : color ??
                     (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-            width: selected ? 2 : 1,
+            width: isSelected ? 2 : 1,
           ),
         ),
         child: Text(label,
             style: TextStyle(
-              color: selected ? AppColors.primary : color,
+              color: isSelected ? AppColors.primary : color,
               fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
             )),
       ),
     );

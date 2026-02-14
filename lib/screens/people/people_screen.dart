@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
-import '../../core/widgets/count_up_text.dart';
+
 import '../../core/widgets/spring_button.dart';
 import '../../core/widgets/empty_state_widget.dart';
 import '../../core/widgets/toast.dart';
@@ -396,13 +396,4 @@ class _SwipeablePersonTile extends StatelessWidget {
   }
 }
 
-// --- Empty People State replaced by shared widget ---
-            Text('Add people to split expenses with',
-                style: widget.theme.textTheme.bodySmall,
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-}
+

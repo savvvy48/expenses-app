@@ -75,7 +75,7 @@ class ExpenseCategory {
   );
   static final fun = ExpenseCategory(
     id: 'fun', label: 'Fun',
-    iconCodePoint: Icons.sports_esports_rounded.codePoint, colorValue: 0xFFFDCB6E,
+    iconCodePoint: Icons.sports_esports_rounded.codePoint, colorValue: 0xFFD4A017,
   );
   static final subscriptions = ExpenseCategory(
     id: 'subscriptions', label: 'Subscriptions',
@@ -89,6 +89,9 @@ class ExpenseCategory {
     id: 'shopping', label: 'Shopping',
     iconCodePoint: Icons.shopping_bag_rounded.codePoint, colorValue: 0xFFA29BFE,
   );
+  
+  // Aliases
+  static final entertainment = fun;
 
   static List<ExpenseCategory> get defaults =>
       [housing, food, transport, fun, subscriptions, health, shopping];
@@ -135,10 +138,14 @@ class Expense {
   final String currency;
   final bool isRecurring;
   final RecurringType recurringType;
-  final String? receiptPath;
+  final List<String> receiptPaths;
   final List<ExpenseSplit> splits;
   final bool isIncome;
   final DateTime createdAt;
+  final bool isTemplate;
+
+  // Backward compatibility
+  String? get receiptPath => receiptPaths.isEmpty ? null : receiptPaths.first;
 
   Expense({
     required this.id,
@@ -151,11 +158,14 @@ class Expense {
     this.currency = 'USD',
     this.isRecurring = false,
     this.recurringType = RecurringType.none,
-    this.receiptPath,
+    List<String>? receiptPaths,
+    String? receiptPath, // Legacy support
     this.splits = const [],
     this.isIncome = false,
     DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+    this.isTemplate = false,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        receiptPaths = receiptPaths ?? (receiptPath != null ? [receiptPath] : []);
 
   Expense copyWith({
     String? id,
@@ -168,9 +178,10 @@ class Expense {
     String? currency,
     bool? isRecurring,
     RecurringType? recurringType,
-    String? receiptPath,
+    List<String>? receiptPaths,
     List<ExpenseSplit>? splits,
     bool? isIncome,
+    bool? isTemplate,
   }) {
     return Expense(
       id: id ?? this.id,
@@ -183,10 +194,11 @@ class Expense {
       currency: currency ?? this.currency,
       isRecurring: isRecurring ?? this.isRecurring,
       recurringType: recurringType ?? this.recurringType,
-      receiptPath: receiptPath ?? this.receiptPath,
+      receiptPaths: receiptPaths ?? this.receiptPaths,
       splits: splits ?? this.splits,
       isIncome: isIncome ?? this.isIncome,
       createdAt: createdAt,
+      isTemplate: isTemplate ?? this.isTemplate,
     );
   }
 
@@ -204,13 +216,19 @@ class Expense {
         'currency': currency,
         'isRecurring': isRecurring,
         'recurringType': recurringType.index,
-        'receiptPath': receiptPath,
+        'receiptPaths': receiptPaths,
         'splits': splits.map((s) => s.toMap()).toList(),
         'isIncome': isIncome,
         'createdAt': createdAt.millisecondsSinceEpoch,
+        'isTemplate': isTemplate,
       };
 
   factory Expense.fromMap(Map<dynamic, dynamic> map) {
+    var paths = (map['receiptPaths'] as List<dynamic>?)?.cast<String>() ?? [];
+    if (paths.isEmpty && map['receiptPath'] != null) {
+      paths = [map['receiptPath'] as String];
+    }
+
     return Expense(
       id: map['id'] as String,
       title: map['title'] as String,
@@ -227,7 +245,7 @@ class Expense {
       currency: map['currency'] as String? ?? 'USD',
       isRecurring: map['isRecurring'] as bool? ?? false,
       recurringType: RecurringType.values[map['recurringType'] as int? ?? 0],
-      receiptPath: map['receiptPath'] as String?,
+      receiptPaths: paths,
       splits: (map['splits'] as List<dynamic>?)
               ?.map((s) => ExpenseSplit.fromMap(s as Map<dynamic, dynamic>))
               .toList() ??
@@ -235,6 +253,7 @@ class Expense {
       isIncome: map['isIncome'] as bool? ?? false,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
           map['createdAt'] as int? ?? DateTime.now().millisecondsSinceEpoch),
+      isTemplate: map['isTemplate'] as bool? ?? false,
     );
   }
 }

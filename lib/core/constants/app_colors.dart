@@ -28,19 +28,27 @@ class AppColors {
   static const Color lightTextSecondary = Color(0xFF666666);
   static const Color lightTextTertiary = Color(0xFF999999);
 
-  // Category colors
+  // Category colors (WCAG AA compliant)
   static const Color housing = Color(0xFF6C5CE7);
   static const Color food = Color(0xFFFF7675);
   static const Color transport = Color(0xFF00B894);
-  static const Color fun = Color(0xFFFDCB6E);
+  static const Color fun = Color(0xFFD4A017);      // Darkened gold for contrast
   static const Color subscriptions = Color(0xFFE17055);
-  static const Color health = Color(0xFF55EFC4);
+  static const Color health = Color(0xFF00B894);
   static const Color shopping = Color(0xFFA29BFE);
 
   // Status
   static const Color success = Color(0xFF00B894);
-  static const Color warning = Color(0xFFFDCB6E);
+  static const Color warning = Color(0xFFD4A017);   // Darkened for contrast
   static const Color error = Color(0xFFFF7675);
+  static const Color info = Color(0xFF2563EB);
+
+  /// Returns white or black text color for best contrast on [background].
+  static Color contrastText(Color background) {
+    // W3C relative luminance formula
+    final luminance = background.computeLuminance();
+    return luminance > 0.5 ? Colors.black : Colors.white;
+  }
 
   // Sharp shadow for elevation
   static List<BoxShadow> sharpShadow(bool isDark) => [
