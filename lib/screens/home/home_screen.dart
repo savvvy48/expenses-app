@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
-
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/widgets/animated_list_item.dart';
-import '../../core/widgets/count_up_text.dart';
-import '../../core/widgets/spring_button.dart';
+import '../../core/widgets/budget_warning_widget.dart';
 import '../../core/widgets/empty_state_widget.dart';
-import '../../core/utils/app_feedback.dart';
+import '../../core/widgets/spring_button.dart';
+import '../../core/widgets/toast.dart';
+import '../../core/widgets/transaction_tile.dart';
 import '../../models/expense.dart';
 import '../../providers/expense_provider.dart';
-import '../../providers/budget_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../add_expense/add_expense_screen.dart';
+import '../settings/budget_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,1050 +24,888 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _searchController = TextEditingController();
-  bool _showSearch = false;
-  bool _isSelectionMode = false;
-  final Set<String> _selectedIds = {};
+  bool _balanceVisible = true;
+  bool _searchOpen = false;
+  final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _searchCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
-  }
-
-  void _toggleSelection(String id) {
-    AppFeedback.onSelection();
-    setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
-        if (_selectedIds.isEmpty) {
-          _isSelectionMode = false;
-        }
-      } else {
-        _selectedIds.add(id);
-      }
-    });
-  }
-
-  void _enterSelectionMode(String id) {
-    AppFeedback.onSelection();
-    setState(() {
-      _isSelectionMode = true;
-      _selectedIds.add(id);
-    });
-  }
-
-  void _exitSelectionMode() {
-    setState(() {
-      _isSelectionMode = false;
-      _selectedIds.clear();
-    });
-  }
-  
-  void _deleteSelected() {
-    final count = _selectedIds.length;
-    if (count == 0) return;
-    
-    AppFeedback.onDelete();
-    final provider = context.read<ExpenseProvider>();
-    final idsToDelete = _selectedIds.toList();
-    
-    provider.deleteExpenses(idsToDelete);
-    _exitSelectionMode();
-    
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$count transactions deleted'),
-        action: SnackBarAction(
-          label: 'Undo',
-          textColor: AppColors.primary,
-          onPressed: () {
-            AppFeedback.onTap();
-            provider.undoDelete();
-          },
-        ),
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Future<void> _onRefresh() async {
-    HapticFeedback.mediumImpact();
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final expProvider = context.watch<ExpenseProvider>();
-    final budgetProvider = context.watch<BudgetProvider>();
-    final expenses = expProvider.expenses;
-    final monthlyUtilization =
-        budgetProvider.monthlyUtilization(expProvider.thisMonthTotal);
+    final settingsProv = context.watch<SettingsProvider>();
+    final symbol = settingsProv.currencySymbol;
+
+    // Filter expenses based on search
+    final allExpenses = expProvider.expenses;
+    final query = _searchCtrl.text.toLowerCase();
+    final expenses = query.isEmpty
+        ? allExpenses
+        : allExpenses
+            .where((e) =>
+                e.title.toLowerCase().contains(query) ||
+                e.category.label.toLowerCase().contains(query) ||
+                e.amount.toString().contains(query))
+            .toList();
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       body: SafeArea(
         bottom: false,
-        child: RefreshIndicator(
-        onRefresh: _onRefresh,
-        color: AppColors.primary,
-        backgroundColor: isDark ? AppColors.darkCard : AppColors.lightCard,
         child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics()),
+          physics: const BouncingScrollPhysics(),
           slivers: [
-            // Header with Net Balance
+            // ─── Header ───
             SliverToBoxAdapter(
-              child: AnimatedListItem(
-                index: 0,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Row(
-                    children: [
-                      Expanded(
+              child: _buildHeader(isDark),
+            ),
+
+            // ─── Search Bar (pull-down reveal) ───
+            if (_searchOpen)
+              SliverToBoxAdapter(
+                child: _buildSearchBar(isDark),
+              ),
+
+            // ─── Wallet Balance Hero ───
+            SliverToBoxAdapter(
+              child: _buildWalletCard(isDark, expProvider, symbol),
+            ),
+
+            // ─── Smart Quick-Add Categories ───
+            SliverToBoxAdapter(
+              child: _buildSmartQuickAdd(isDark, expProvider, symbol),
+            ),
+
+            // ─── Budget Warning ───
+            const SliverToBoxAdapter(
+              child: BudgetWarningWidget(),
+            ),
+
+            // ─── Insight Card ───
+            SliverToBoxAdapter(
+              child: _buildInsightCard(isDark, expProvider, symbol),
+            ),
+
+            // ─── Transactions Header ───
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Transactions',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                        color: isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary,
+                      ),
+                    ),
+                    Text(
+                      DateFormat('MMM yyyy').format(DateTime.now()),
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? AppColors.darkTextTertiary
+                            : AppColors.lightTextTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ─── Transaction List with Swipe ───
+            if (expenses.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: query.isNotEmpty
+                      ? EmptyStateWidget(
+                          icon: Icons.search_off_rounded,
+                          title: 'No results',
+                          subtitle: 'Try a different search term',
+                        )
+                      : const EmptyStateWidget(
+                          icon: Icons.receipt_long_outlined,
+                          title: 'No transactions yet',
+                          subtitle: 'Tap + to add your first expense',
+                        ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final expense = expenses[index];
+                      final showDateHeader = index == 0 ||
+                          !_isSameDay(expenses[index - 1].date, expense.date);
+
+                      return AnimatedListItem(
+                        index: index,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Net Balance',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                    color: theme.textTheme.bodySmall?.color)),
-                            const SizedBox(height: 4),
-                            CountUpText(
-                              end: expProvider.netBalance,
-                              prefix: '\$',
-                              decimals: 2,
-                              style: theme.textTheme.headlineMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 32,
-                                  color: expProvider.netBalance >= 0 
-                                    ? AppColors.success 
-                                    : AppColors.error),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SpringButton(
-                        semanticLabel: 'Filter expenses',
-                        onTap: () =>
-                            _showFilterSheet(context, expProvider),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: expProvider.hasActiveFilters
-                                  ? AppColors.primary
-                                  : isDark
-                                      ? AppColors.darkBorder
-                                      : AppColors.lightBorder,
-                            ),
-                            color: expProvider.hasActiveFilters
-                                ? AppColors.primary.withValues(alpha: 0.1)
-                                : isDark
-                                    ? AppColors.darkCard
-                                    : AppColors.lightCard,
-                          ),
-                          child: Icon(Icons.tune,
-                              size: 20,
-                              color: expProvider.hasActiveFilters
-                                  ? AppColors.primary
-                                  : null),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SpringButton(
-                        onTap: () => setState(() {
-                          _showSearch = !_showSearch;
-                          if (!_showSearch) {
-                            _searchController.clear();
-                            expProvider.setSearch('');
-                          }
-                        }),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: isDark
-                                  ? AppColors.darkBorder
-                                  : AppColors.lightBorder,
-                            ),
-                            color:
-                                isDark ? AppColors.darkCard : AppColors.lightCard,
-                          ),
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            child: Icon(
-                              _showSearch ? Icons.close : Icons.search,
-                              key: ValueKey(_showSearch),
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            
-            // ... Search Bar (Unchanged) ...
-            SliverToBoxAdapter(
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-                child: _showSearch
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: SizedBox(
-                                height: 48,
-                                child: TextField(
-                                  controller: _searchController,
-                                  onChanged: expProvider.setSearch,
-                                  style: theme.textTheme.bodyLarge,
-                                  decoration: InputDecoration(
-                                    hintText: 'Search expenses...',
-                                    prefixIcon:
-                                        const Icon(Icons.search, size: 20),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 12),
-                                    border: const OutlineInputBorder(
-                                      borderRadius: BorderRadius.zero,
-                                      borderSide: BorderSide(width: 2),
-                                    ),
+                            if (showDateHeader)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 12, bottom: 6),
+                                child: Text(
+                                  _formatDateHeader(expense.date),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? AppColors.darkTextTertiary
+                                        : AppColors.lightTextTertiary,
+                                    letterSpacing: 1.0,
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Filter button moved to header
-                          ],
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ),
-            
-            // Sort Options
-            SliverToBoxAdapter(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    Text('Sort:', style: theme.textTheme.bodySmall),
-                    const SizedBox(width: 8),
-                    ...[
-                      (label: 'Date ↓', opt: SortOption.dateNewest),
-                      (label: 'Date ↑', opt: SortOption.dateOldest),
-                      (label: 'Amt ↓', opt: SortOption.amountHighLow),
-                      (label: 'Amt ↑', opt: SortOption.amountLowHigh),
-                      (label: 'Cat', opt: SortOption.categoryAZ),
-                    ].map((e) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(e.label),
-                            labelStyle: TextStyle(
-                              fontSize: 12,
-                              color: expProvider.currentSort == e.opt
-                                  ? Colors.white
-                                  : isDark
-                                      ? Colors.white
-                                      : Colors.black,
-                            ),
-                            selected: expProvider.currentSort == e.opt,
-                            selectedColor: AppColors.primary,
-                            backgroundColor: isDark
-                                ? AppColors.darkCard
-                                : AppColors.lightCard,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                              side: BorderSide(
-                                color: expProvider.currentSort == e.opt
-                                    ? Colors.transparent
-                                    : isDark
-                                        ? AppColors.darkBorder
-                                        : AppColors.lightBorder,
+                            // ─── Swipe: Left=Delete, Right=Edit ───
+                            Dismissible(
+                              key: ValueKey(expense.id),
+                              direction: DismissDirection.horizontal,
+                              // Right swipe → Edit (blue)
+                              background: Container(
+                                alignment: Alignment.centerLeft,
+                                padding: const EdgeInsets.only(left: 24),
+                                margin: const EdgeInsets.only(bottom: 8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Icon(
+                                  Icons.edit_rounded,
+                                  color: AppColors.primary,
+                                  size: 22,
+                                ),
                               ),
-                            ),
-                            onSelected: (_) {
-                              AppFeedback.onSelection();
-                              expProvider.setSortOption(e.opt);
-                            },
-                          ),
-                        )),
-                  ],
-                ),
-              ),
-            ),
-            // Income vs Expense Row (Replaces Budget Card temporarily or complements it)
-            // For now, let's keep budget card but maybe shrink it or move it? 
-            // The plan said "Update HomeScreen to show income vs expense breakdown"
-            // Let's replace the large budget card with a summary row of Income | Expense
-            SliverToBoxAdapter(
-              child: AnimatedListItem(
-                index: 1,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.success.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.success.withValues(alpha: 0.2)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.arrow_downward, size: 16, color: AppColors.success),
-                                  const SizedBox(width: 4),
-                                  Text('Income', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
-                                ],
+                              // Left swipe → Delete (red)
+                              secondaryBackground: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 24),
+                                margin: const EdgeInsets.only(bottom: 8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.error.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: AppColors.error,
+                                  size: 24,
+                                ),
                               ),
-                              const SizedBox(height: 8),
-                              CountUpText(
-                                end: expProvider.totalIncome,
-                                prefix: '+\$',
-                                decimals: 2,
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.success),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.arrow_upward, size: 16, color: AppColors.error),
-                                  const SizedBox(width: 4),
-                                  Text('Expense', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              CountUpText(
-                                end: expProvider.totalSpent,
-                                prefix: '-\$',
-                                decimals: 2,
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.error),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            
-            // Budget Summary (Condensed)
-            SliverToBoxAdapter(
-              child: AnimatedListItem(
-                index: 2,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkCard : AppColors.lightCard,
-                      border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Monthly Budget', style: theme.textTheme.titleSmall),
-                            Text('${(monthlyUtilization * 100).toInt()}% Used', 
-                              style: TextStyle(fontWeight: FontWeight.bold, color: budgetProvider.budgetColor(monthlyUtilization))),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: monthlyUtilization.clamp(0.0, 1.0),
-                            backgroundColor: isDark ? Colors.black26 : Colors.grey.shade200,
-                            valueColor: AlwaysStoppedAnimation(budgetProvider.budgetColor(monthlyUtilization)),
-                            minHeight: 8,
-                          ),
-                        ),
-                        if (monthlyUtilization >= 0.9)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              monthlyUtilization >= 1 ? 'Budget Exceeded!' : 'Approaching Limit',
-                              style: TextStyle(color: AppColors.error, fontSize: 12, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Recent Activity Header
-            SliverToBoxAdapter(
-              child: AnimatedListItem(
-                index: 3,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Recent Activity',
-                          style: theme.textTheme.titleMedium),
-                      if (expProvider.hasActiveFilters)
-                        SpringButton(
-                          onTap: expProvider.clearFilters,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: AppColors.primary),
-                            ),
-                            child: const Text('Clear Filters',
-                                style: TextStyle(
-                                    color: AppColors.primary, fontSize: 12)),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Transaction List — with swipe-to-delete and scroll reveal
-            expenses.isEmpty
-                ? SliverToBoxAdapter(
-                    child: AnimatedListItem(
-                      index: 4,
-                      child: const EmptyStateWidget(
-                        title: 'No expenses yet',
-                        subtitle: 'Tap + to add your first expense',
-                        icon: Icons.receipt_long,
-                      ),
-                    ),
-                  )
-                : SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final expense = expenses[index];
-                          return AnimatedListItem(
-                            index: index,
-                            delay: const Duration(milliseconds: 40),
-                            child: _SwipeableTransactionTile(
-                              expense: expense,
-                              isDark: isDark,
-                              theme: theme,
-                              isSelectionMode: _isSelectionMode,
-                              isSelected: _selectedIds.contains(expense.id),
-                              onDelete: () => _deleteExpense(context, expense),
-                              onTap: () {
-                                if (_isSelectionMode) {
-                                  _toggleSelection(expense.id);
-                                } else {
-                                  _viewExpense(context, expense);
+                              confirmDismiss: (direction) async {
+                                HapticFeedback.mediumImpact();
+                                if (direction == DismissDirection.startToEnd) {
+                                  // Swipe right → open edit screen (don't dismiss)
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      fullscreenDialog: true,
+                                      builder: (_) => AddExpenseScreen(
+                                        editExpense: expense,
+                                      ),
+                                    ),
+                                  );
+                                  return false; // Don't actually dismiss
                                 }
+                                // Swipe left → confirm delete
+                                return true;
                               },
-                              onLongPress: () => _enterSelectionMode(expense.id),
+                              onDismissed: (_) {
+                                expProvider.deleteExpense(expense.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '${expense.title} deleted',
+                                      style: GoogleFonts.inter(),
+                                    ),
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    action: SnackBarAction(
+                                      label: 'UNDO',
+                                      textColor: AppColors.primary,
+                                      onPressed: () {
+                                        expProvider.undoDelete();
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: TransactionTile(
+                                expense: expense,
+                                isDark: isDark,
+                                currencySymbol: symbol,
+                              ),
                             ),
-                          );
-                        },
-                        childCount: expenses.length,
-                      ),
-                    ),
+                          ],
+                        ),
+                      );
+                    },
+                    childCount: expenses.length,
                   ),
+                ),
+              ),
           ],
         ),
       ),
-    ),
-    floatingActionButton: _isSelectionMode
-          ? null
-          : Semantics(
-              label: 'Add new expense',
-              button: true,
-              child: FloatingActionButton(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (ctx) => const AddExpenseScreen()),
-              ),
-              backgroundColor: AppColors.primary,
-              child: const Icon(Icons.add, color: Colors.white),
-            ),
-          ),
-      bottomNavigationBar: _isSelectionMode
-          ? BottomAppBar(
-              color: isDark ? AppColors.darkCard : AppColors.lightCard,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    TextButton(
-                      onPressed: _exitSelectionMode,
-                      child: const Text('Cancel'),
-                    ),
-                    const Spacer(),
-                    Text('${_selectedIds.length} selected',
-                        style: theme.textTheme.titleMedium),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Delete Selected?'),
-                            content: Text(
-                                'Are you sure you want to delete ${_selectedIds.length} transaction(s)?'),
-                            actions: [
-                              TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('Cancel')),
-                              TextButton(
-                                  onPressed: () {
-                                    Navigator.pop(ctx);
-                                    _deleteSelected();
-                                  },
-                                  child: const Text('Delete',
-                                      style: TextStyle(color: AppColors.error))),
-                            ],
-                          ),
-                        );
-                      },
-                      child: const Text('Delete',
-                          style: TextStyle(color: AppColors.error)),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : null,
-  );
-}
-
-  void _deleteExpense(BuildContext context, Expense expense) {
-    
-    // Optimistic remove from UI is handled by Dismissible, but we need to tell provider
-    // However, provider.deleteExpense() removes it from the list. 
-    // If we want to support undo, we should keep a reference or rely on provider's undo.
-    
-    context.read<ExpenseProvider>().deleteExpense(expense.id);
-
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${expense.title} deleted'),
-        action: SnackBarAction(
-          label: 'Undo',
-          textColor: AppColors.primary,
-          onPressed: () {
-            AppFeedback.onTap();
-            context.read<ExpenseProvider>().undoDelete();
-          },
-        ),
-        duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-      ),
     );
   }
 
-  void _viewExpense(BuildContext context, Expense expense) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, a, _) =>
-            _ExpenseDetailSheet(expense: expense),
-        transitionsBuilder: (context, a, _, child) =>
-            SlideTransition(
-          position: Tween<Offset>(
-                  begin: const Offset(1, 0), end: Offset.zero)
-              .animate(
-                  CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-      ),
-    );
-  }
+  // ═══════════════════════════════════════════════════════════════
+  // HEADER (with search toggle)
+  // ═══════════════════════════════════════════════════════════════
 
-  void _showFilterSheet(BuildContext context, ExpenseProvider provider) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _FilterSheet(provider: provider),
-    );
-  }
-}
-
-// ... (AnimatedFractionallySizedBox removed as it's no longer used in the main view, or keep if needed elsewhere) ...
-
-// --- Quick Stat with CountUp (Removed as replaced by Income/Expense summary) ---
-
-// --- Swipeable Transaction Tile (Swipe to Delete) ---
-class _SwipeableTransactionTile extends StatelessWidget {
-  final Expense expense;
-  final bool isDark;
-  final ThemeData theme;
-  final bool isSelectionMode;
-  final bool isSelected;
-  final VoidCallback onDelete;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  const _SwipeableTransactionTile({
-    required this.expense,
-    required this.isDark,
-    required this.theme,
-    required this.isSelectionMode,
-    required this.isSelected,
-    required this.onDelete,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final d = DateTime(date.year, date.month, date.day);
-    if (d == today) return 'Today';
-    if (d == today.subtract(const Duration(days: 1))) return 'Yesterday';
-    return DateFormat('MMM d').format(date);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isIncome = expense.isIncome;
-    final amountColor = isIncome ? AppColors.success : AppColors.error;
-    final prefix = isIncome ? '+\$' : '-\$';
-
-    if (isSelectionMode) {
-      return GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppColors.primary.withValues(alpha: 0.1)
-                : (isDark ? AppColors.darkCard : AppColors.lightCard),
-            border: _getBorder(),
-          ),
-          child: Row(
-            children: [
-              // Checkbox Overlay
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : Colors.transparent,
-                  border: isSelected
-                      ? null
-                      : Border.all(
-                          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: isSelected
-                    ? const Icon(Icons.check, color: Colors.white)
-                    : Icon(expense.category.icon,
-                        color: expense.category.color.withValues(alpha: 0.5), size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: _buildContent(amountColor, prefix)),
-            ],
-          ),
-        ),
-      );
+  Widget _buildHeader(bool isDark) {
+    final hour = DateTime.now().hour;
+    String greeting;
+    String emoji;
+    if (hour < 12) {
+      greeting = 'Good Morning';
+      emoji = '☀️';
+    } else if (hour < 17) {
+      greeting = 'Good Afternoon';
+      emoji = '🌤️';
+    } else {
+      greeting = 'Good Evening';
+      emoji = '🌙';
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Dismissible(
-        key: ValueKey(expense.id),
-        direction: DismissDirection.endToStart,
-        confirmDismiss: (direction) async {
-          AppFeedback.onSelection();
-          return await showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Delete Expense?'),
-              content: Text('Are you sure you want to delete "${expense.title}"?'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(false),
-                    child: const Text('Cancel')),
-                TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(true),
-                    child: const Text('Delete',
-                        style: TextStyle(color: AppColors.error))),
-              ],
-            ),
-          );
-        },
-        onDismissed: (_) {
-          AppFeedback.heavyImpact();
-          onDelete();
-        },
-        background: Container(
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: 20),
-          color: AppColors.error,
-          child: const Icon(Icons.delete_forever, color: Colors.white, size: 28),
-        ),
-        child: GestureDetector(
-          onTap: onTap,
-          child: _buildTileContent(amountColor, prefix),
-        ),
-      ),
-    );
-  }
-
-  BoxBorder _getBorder() {
-    if (isSelected) return Border.all(color: AppColors.primary, width: 2);
-    return Border(
-      top: BorderSide(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-      bottom: BorderSide(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-      right: BorderSide(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-      left: expense.isRecurring
-          ? const BorderSide(color: AppColors.housing, width: 4)
-          : BorderSide(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-    );
-  }
-
-  Widget _buildTileContent(Color amountColor, String prefix) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        border: _getBorder(),
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            color: expense.category.color.withValues(alpha: 0.12),
-            child: Icon(expense.category.icon,
-                color: expense.category.color, size: 20),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$greeting $emoji',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? AppColors.darkTextTertiary
+                      : AppColors.lightTextTertiary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Dashboard',
+                style: GoogleFonts.inter(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(child: _buildContent(amountColor, prefix)),
+          Row(
+            children: [
+              // Search toggle
+              SpringButton(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    _searchOpen = !_searchOpen;
+                    if (!_searchOpen) {
+                      _searchCtrl.clear();
+                    }
+                  });
+                  if (_searchOpen) {
+                    Future.delayed(const Duration(milliseconds: 200), () {
+                      _searchFocus.requestFocus();
+                    });
+                  }
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: _searchOpen
+                        ? AppColors.primary.withValues(alpha: 0.15)
+                        : (isDark ? AppColors.darkCard : Colors.white),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _searchOpen
+                          ? AppColors.primary.withValues(alpha: 0.3)
+                          : (isDark
+                              ? AppColors.darkBorder
+                              : AppColors.lightBorder),
+                      width: 1,
+                    ),
+                  ),
+                  child: Icon(
+                    _searchOpen
+                        ? Icons.close_rounded
+                        : Icons.search_rounded,
+                    size: 22,
+                    color: _searchOpen
+                        ? AppColors.primary
+                        : (isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.lightTextSecondary),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Notifications
+              SpringButton(
+                onTap: () => AppToast.info(context, 'No new notifications'),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkCard : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color:
+                          isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                      width: 1,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.notifications_outlined,
+                    size: 22,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildContent(Color amountColor, String prefix) {
+  // ═══════════════════════════════════════════════════════════════
+  // SEARCH BAR
+  // ═══════════════════════════════════════════════════════════════
+
+  Widget _buildSearchBar(bool isDark) {
+    return AnimatedOpacity(
+      opacity: _searchOpen ? 1 : 0,
+      duration: const Duration(milliseconds: 200),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkCard : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.3),
+            ),
+          ),
+          child: TextField(
+            controller: _searchCtrl,
+            focusNode: _searchFocus,
+            onChanged: (_) => setState(() {}),
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color:
+                  isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Search transactions...',
+              hintStyle: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isDark
+                    ? AppColors.darkTextTertiary
+                    : AppColors.lightTextTertiary,
+              ),
+              border: InputBorder.none,
+              icon: Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // WALLET HERO CARD (with trend indicator)
+  // ═══════════════════════════════════════════════════════════════
+
+  Widget _buildWalletCard(
+      bool isDark, ExpenseProvider provider, String symbol) {
+    final balance = provider.thisMonthNetBalance;
+    final income = provider.thisMonthIncome;
+    final expenses = provider.thisMonthTotal;
+    final weekChange = provider.weekOverWeekChange;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary,
+              AppColors.primaryDark,
+              const Color(0xFF4C1D95),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.3),
+              offset: const Offset(0, 12),
+              blurRadius: 32,
+              spreadRadius: -4,
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 18,
+                  color: Colors.white.withValues(alpha: 0.6),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Total Balance',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () =>
+                      setState(() => _balanceVisible = !_balanceVisible),
+                  child: Icon(
+                    _balanceVisible
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // ─── Big balance ───
+            Text(
+              _balanceVisible
+                  ? '$symbol ${balance.toStringAsFixed(2)}'
+                  : '$symbol ••••',
+              style: GoogleFonts.inter(
+                fontSize: 36,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -1.5,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            // ─── Trend indicator ↑↓ ───
+            if (_balanceVisible && weekChange != 0)
+              _buildTrendIndicator(weekChange, symbol, provider),
+            const SizedBox(height: 20),
+
+            // Income / Expense pills
+            Row(
+              children: [
+                _BalancePill(
+                  icon: Icons.trending_up_rounded,
+                  label: 'Income',
+                  amount: '$symbol${income.toStringAsFixed(0)}',
+                  color: AppColors.heroMint,
+                ),
+                const SizedBox(width: 12),
+                _BalancePill(
+                  icon: Icons.trending_down_rounded,
+                  label: 'Spent',
+                  amount: '$symbol${expenses.toStringAsFixed(0)}',
+                  color: AppColors.heroPeach,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendIndicator(
+      double weekChange, String symbol, ExpenseProvider provider) {
+    final isUp = weekChange > 0;
     return Row(
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: (isUp ? AppColors.heroPeach : AppColors.heroMint)
+                .withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(expense.title,
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontSize: 14)),
-                  ),
-                  if (expense.isRecurring)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 6),
-                      child: Icon(Icons.repeat,
-                          size: 16, color: AppColors.housing),
-                    ),
-                ],
+              Icon(
+                isUp
+                    ? Icons.trending_up_rounded
+                    : Icons.trending_down_rounded,
+                size: 14,
+                color: isUp ? AppColors.heroPeach : AppColors.heroMint,
               ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    color: expense.category.color.withValues(alpha: 0.1),
-                    child: Text(expense.category.label,
-                        style: TextStyle(
-                            color: expense.category.color,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(_formatDate(expense.date),
-                      style: theme.textTheme.bodySmall),
-                  if (expense.splits.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      child: const Text('Split',
-                          style: TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ],
+              const SizedBox(width: 4),
+              Text(
+                '${weekChange.abs().toStringAsFixed(0)}%',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isUp ? AppColors.heroPeach : AppColors.heroMint,
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text('$prefix${expense.amount.toStringAsFixed(2)}',
-                style: theme.textTheme.titleMedium?.copyWith(
-                    color: amountColor,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(expense.paymentMethod.icon,
-                    size: 16,
-                    color: isDark
-                        ? AppColors.darkTextTertiary
-                        : AppColors.lightTextTertiary),
-                const SizedBox(width: 3),
-                Text(expense.paymentMethod.label,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(fontSize: 10)),
-              ],
-            ),
-          ],
+        Text(
+          isUp ? 'more than last week' : 'less than last week',
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Colors.white.withValues(alpha: 0.5),
+          ),
         ),
       ],
     );
   }
-}
 
-// --- Empty State replaced by shared widget ---
+  // ═══════════════════════════════════════════════════════════════
+  // SMART QUICK-ADD (auto-learned top categories + generic add)
+  // ═══════════════════════════════════════════════════════════════
 
-// --- Expense Detail Sheet ---
-class _ExpenseDetailSheet extends StatelessWidget {
-  final Expense expense;
-  const _ExpenseDetailSheet({required this.expense});
+  Widget _buildSmartQuickAdd(
+      bool isDark, ExpenseProvider provider, String symbol) {
+    final topCats = provider.topCategories;
 
-  void _shareExpense(BuildContext context) {
-    final date = DateFormat.yMMMMEEEEd().format(expense.date);
-    final text = 'Expense Details:\n\n'
-        'Title: ${expense.title}\n'
-        'Amount: \$${expense.amount.toStringAsFixed(2)}\n'
-        'Category: ${expense.category.label}\n'
-        'Date: $date\n'
-        'Payment: ${expense.paymentMethod.label}\n'
-        '${expense.notes != null ? 'Notes: ${expense.notes}\n' : ''}';
-    Share.share(text);
-  }
+    // If user has no history, show generic quick actions
+    if (topCats.isEmpty) {
+      return _buildGenericQuickActions(isDark);
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Expense Details'),
-        actions: [
-          IconButton(
-            onPressed: () => _shareExpense(context),
-            icon: const Icon(Icons.share),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => AddExpenseScreen(editExpense: expense),
-              ));
-            },
-            icon: const Icon(Icons.edit),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Column(
-                children: [
-                  AnimatedListItem(
-                    index: 0,
-                    child: Container(
-                      width: 64,
-                      height: 64,
-                      color: expense.category.color.withValues(alpha: 0.15),
-                      child: Icon(expense.category.icon,
-                          color: expense.category.color, size: 32),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  AnimatedListItem(
-                    index: 1,
-                    child: Text(expense.title,
-                        style: theme.textTheme.headlineMedium),
-                  ),
-                  const SizedBox(height: 8),
-                  AnimatedListItem(
-                    index: 2,
-                    child: CountUpText(
-                      end: expense.amount,
-                      prefix: '-\$',
-                      decimals: 2,
-                      style: theme.textTheme.headlineLarge?.copyWith(
-                          color: AppColors.error,
-                          fontSize: 36,
-                          fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ],
-              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'QUICK ADD',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: isDark
+                  ? AppColors.darkTextTertiary
+                  : AppColors.lightTextTertiary,
             ),
-            const SizedBox(height: 24),
-            ...[
-              _DetailRow('Category', expense.category.label,
-                  expense.category.icon, expense.category.color, isDark, theme),
-              _DetailRow(
-                  'Date',
-                  DateFormat('EEEE, MMM d, y').format(expense.date),
-                  Icons.calendar_today,
-                  AppColors.primary,
-                  isDark,
-                  theme),
-              _DetailRow('Payment', expense.paymentMethod.label,
-                  expense.paymentMethod.icon, AppColors.transport, isDark, theme),
-              if (expense.isRecurring)
-                _DetailRow('Recurring', expense.recurringType.label,
-                    Icons.repeat, AppColors.housing, isDark, theme),
-              if (expense.notes != null && expense.notes!.isNotEmpty)
-                _DetailRow('Notes', expense.notes!, Icons.note,
-                    AppColors.fun, isDark, theme),
-            ].asMap().entries.map((e) => AnimatedListItem(
-                  index: e.key + 3,
-                  child: e.value,
-                )),
-            if (expense.splits.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Text('Split Between', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              ...expense.splits.asMap().entries.map((e) => AnimatedListItem(
-                    index: e.key + 6,
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color:
-                            isDark ? AppColors.darkCard : AppColors.lightCard,
-                        border: Border.all(
-                            color: isDark
-                                ? AppColors.darkBorder
-                                : AppColors.lightBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 32,
-                            height: 32,
-                            color: AppColors.primary,
-                            child: Center(
-                              child: Text(e.value.personName[0],
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              // Top categories (auto-learned)
+              ...topCats.map((cat) => Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: SpringButton(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            fullscreenDialog: true,
+                            builder: (_) => AddExpenseScreen(
+                              preselectedCategory: cat,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: Text(e.value.personName,
-                                  style: theme.textTheme.bodyLarge)),
-                          Text('\$${e.value.amount.toStringAsFixed(2)}',
-                              style: theme.textTheme.titleMedium),
-                        ],
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: cat.color.withValues(alpha: isDark ? 0.12 : 0.08),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: cat.color.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(cat.icon, size: 18, color: cat.color),
+                            const SizedBox(width: 8),
+                            Text(
+                              cat.label,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: cat.color,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   )),
+              const Spacer(),
+              // Generic "+" button
+              SpringButton(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      fullscreenDialog: true,
+                      builder: (_) => const AddExpenseScreen(),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryLight],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: AppColors.floatingShadow(AppColors.primary),
+                  ),
+                  child: const Icon(Icons.add_rounded,
+                      color: Colors.white, size: 24),
+                ),
+              ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGenericQuickActions(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _QuickAction(
+            icon: Icons.add_rounded,
+            label: 'Add',
+            color: AppColors.primary,
+            isDark: isDark,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                fullscreenDialog: true,
+                builder: (_) => const AddExpenseScreen(),
+              ),
+            ),
+          ),
+          _QuickAction(
+            icon: Icons.pie_chart_outline_rounded,
+            label: 'Analytics',
+            color: AppColors.heroMint,
+            isDark: isDark,
+            onTap: () {},
+          ),
+          _QuickAction(
+            icon: Icons.savings_outlined,
+            label: 'Budget',
+            color: AppColors.heroCream,
+            isDark: isDark,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BudgetScreen()),
+            ),
+          ),
+          _QuickAction(
+            icon: Icons.more_horiz_rounded,
+            label: 'More',
+            color: AppColors.heroSky,
+            isDark: isDark,
+            onTap: () => AppToast.info(context, 'Coming soon'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // INSIGHT CARD (contextual, month-over-month)
+  // ═══════════════════════════════════════════════════════════════
+
+  Widget _buildInsightCard(
+      bool isDark, ExpenseProvider provider, String symbol) {
+    final monthChange = provider.monthOverMonthChange;
+    final thisMonth = provider.thisMonthTotal;
+    final lastMonth = provider.lastMonthTotal;
+
+    // Don't show if there's no data to compare
+    if (lastMonth == 0 && thisMonth == 0) return const SizedBox.shrink();
+
+    final isSpendingMore = monthChange > 0;
+    final changeStr = monthChange.abs().toStringAsFixed(0);
+    final diffAmount = (thisMonth - lastMonth).abs();
+
+    String insight;
+    IconData insightIcon;
+    Color insightColor;
+
+    if (lastMonth == 0) {
+      insight = 'First month! You\'ve spent $symbol${thisMonth.toStringAsFixed(0)} so far';
+      insightIcon = Icons.celebration_rounded;
+      insightColor = AppColors.heroCream;
+    } else if (isSpendingMore) {
+      insight =
+          'You\'re spending $changeStr% more than last month (+$symbol${diffAmount.toStringAsFixed(0)})';
+      insightIcon = Icons.trending_up_rounded;
+      insightColor = AppColors.error;
+    } else {
+      insight =
+          'Great! You\'re spending $changeStr% less than last month (-$symbol${diffAmount.toStringAsFixed(0)})';
+      insightIcon = Icons.trending_down_rounded;
+      insightColor = AppColors.success;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: insightColor.withValues(alpha: isDark ? 0.08 : 0.06),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: insightColor.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: insightColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(insightIcon, size: 18, color: insightColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                insight,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary,
+                  height: 1.4,
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // HELPERS
+  // ═══════════════════════════════════════════════════════════════
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  String _formatDateHeader(DateTime date) {
+    final now = DateTime.now();
+    if (_isSameDay(date, now)) return 'TODAY';
+    if (_isSameDay(date, now.subtract(const Duration(days: 1)))) {
+      return 'YESTERDAY';
+    }
+    return DateFormat('MMM dd, yyyy').format(date).toUpperCase();
+  }
 }
 
-class _DetailRow extends StatelessWidget {
-  final String label, value;
-  final IconData icon;
-  final Color color;
-  final bool isDark;
-  final ThemeData theme;
+// ═══════════════════════════════════════════════════════════════
+// BALANCE PILL (inside gradient card)
+// ═══════════════════════════════════════════════════════════════
 
-  const _DetailRow(
-      this.label, this.value, this.icon, this.color, this.isDark, this.theme);
+class _BalancePill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String amount;
+  final Color color;
+
+  const _BalancePill({
+    required this.icon,
+    required this.label,
+    required this.amount,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            color: color.withValues(alpha: 0.12),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(width: 12),
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: theme.textTheme.bodySmall),
-              const SizedBox(height: 2),
-              Text(value,
-                  style: theme.textTheme.bodyLarge
-                      ?.copyWith(fontWeight: FontWeight.w500)),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.6),
+                ),
+              ),
+              Text(
+                amount,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
             ],
           ),
         ],
@@ -1075,128 +914,52 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
-// --- Filter Sheet ---
-class _FilterSheet extends StatelessWidget {
-  final ExpenseProvider provider;
-  const _FilterSheet({required this.provider});
+// ═══════════════════════════════════════════════════════════════
+// QUICK ACTION (generic fallback)
+// ═══════════════════════════════════════════════════════════════
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text('Filter by Category', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _FilterChip(
-                  label: 'All',
-                  isSelected: !provider.hasActiveFilters,
-                  onTap: () {
-                    AppFeedback.onSelection();
-                    provider.clearFilters();
-                    Navigator.pop(context);
-                  },
-                  isDark: isDark),
-              ...provider.allCategories.map((cat) => _FilterChip(
-                    label: cat.label,
-                    isSelected: provider.filterCategoryId == cat.id,
-                    color: cat.color,
-                    onTap: () {
-                      AppFeedback.onSelection();
-                      provider.setFilterCategory(cat.id);
-                      Navigator.pop(context);
-                    },
-                    isDark: isDark,
-                  )),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text('Filter by Payment', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: PaymentMethod.values
-                .map((m) => _FilterChip(
-                      label: m.label,
-                      isSelected: provider.filterPaymentMethod == m,
-                      onTap: () {
-                        AppFeedback.onSelection();
-                        provider.setFilterPaymentMethod(m);
-                        Navigator.pop(context);
-                      },
-                      isDark: isDark,
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
   final String label;
-  final bool isSelected;
-  final Color? color;
-  final VoidCallback onTap;
+  final Color color;
   final bool isDark;
+  final VoidCallback onTap;
 
-  const _FilterChip({
+  const _QuickAction({
+    required this.icon,
     required this.label,
-    required this.isSelected,
-    this.color,
-    required this.onTap,
+    required this.color,
     required this.isDark,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return SpringButton(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.1)
-              : isDark
-                  ? AppColors.darkCard
-                  : AppColors.lightCard,
-          border: Border.all(
-            color: isSelected
-                ? AppColors.primary
-                : color ??
-                    (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-            width: isSelected ? 2 : 1,
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: isDark ? 0.12 : 0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(icon, color: color, size: 24),
           ),
-        ),
-        child: Text(label,
-            style: TextStyle(
-              color: isSelected ? AppColors.primary : color,
-              fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-            )),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.lightTextSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }

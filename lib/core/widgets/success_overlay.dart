@@ -65,7 +65,8 @@ class _SuccessContentState extends State<_SuccessContent>
           height: 120,
           decoration: BoxDecoration(
             color: AppColors.success,
-            boxShadow: AppColors.sharpShadow(isDark),
+            shape: BoxShape.circle,
+            boxShadow: AppColors.softShadow(isDark),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

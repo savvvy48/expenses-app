@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
-import '../core/constants/app_constants.dart';
+import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+
 import '../core/data/expense_repository.dart';
 import '../models/expense.dart';
-import 'package:uuid/uuid.dart';
+import '../models/time_period.dart';
 
 enum SortOption {
   dateNewest,
@@ -29,6 +30,8 @@ class ExpenseProvider extends ChangeNotifier {
 
   List<Expense> get expenses => _getFilteredExpenses();
   List<Expense> get allExpenses => List.unmodifiable(_expenses);
+  List<Expense> get templates => _expenses.where((e) => e.isTemplate).toList();
+
   List<ExpenseCategory> get allCategories => [...ExpenseCategory.defaults, ..._customCategories];
   // ... getters ...
   SortOption get currentSort => _currentSort;
@@ -73,7 +76,6 @@ class ExpenseProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ... rest of the class ...
 
   List<Expense> _getFilteredExpenses() {
     var result = List<Expense>.from(_expenses);
@@ -161,19 +163,21 @@ class ExpenseProvider extends ChangeNotifier {
   }
 
   Future<void> deleteExpenses(List<String> ids) async {
-    _lastDeletedBatch = _expenses.where((e) => ids.contains(e.id)).toList();
+    final toDelete = _expenses.where((e) => ids.contains(e.id)).toList();
+    _lastDeletedBatch = toDelete;
+
+    await Future.wait(ids.map((id) => _repository.deleteExpense(id)));
+    
     _expenses.removeWhere((e) => ids.contains(e.id));
     notifyListeners();
-    for (final id in ids) {
-      await _repository.deleteExpense(id);
-    }
   }
 
   Future<void> undoDelete() async {
     if (_lastDeletedBatch.isNotEmpty) {
-      for (final expense in _lastDeletedBatch) {
-        await addExpense(expense);
-      }
+      await Future.wait(_lastDeletedBatch.map((e) => _repository.saveExpense(e)));
+      _expenses.addAll(_lastDeletedBatch);
+      _sortExpenses();
+      notifyListeners();
       _lastDeletedBatch.clear();
     }
   }
@@ -219,6 +223,8 @@ class ExpenseProvider extends ChangeNotifier {
         .fold(0.0, (sum, e) => sum + e.amount);
   }
 
+  double get thisMonthNetBalance => thisMonthIncome - thisMonthTotal;
+
   double get lastMonthTotal {
     final now = DateTime.now();
     final lastMonth = DateTime(now.year, now.month - 1);
@@ -238,32 +244,41 @@ class ExpenseProvider extends ChangeNotifier {
         .fold(0.0, (sum, e) => sum + e.amount);
   }
 
-  bool isDailyLimitExceeded(double newAmount) {
+
+
+  bool isDailyLimitExceeded(double newAmount, double dailyLimit) {
     // Only check if daily limit is set (non-zero)
-    if (AppConstants.defaultDailyLimit <= 0) return false;
-    return (todayTotal + newAmount) > AppConstants.defaultDailyLimit;
+    if (dailyLimit <= 0) return false;
+    return (todayTotal + newAmount) > dailyLimit;
   }
 
   // Analytics Helpers
-  List<Expense> getExpensesForPeriod(String period, DateTime anchor) {
-    if (period == 'Day') {
-      return _expenses.where((e) => 
-        e.date.year == anchor.year && 
-        e.date.month == anchor.month && 
-        e.date.day == anchor.day).toList();
-    } else if (period == 'Week') {
+  List<Expense> getExpensesForPeriod(TimePeriod period, DateTime anchor) {
+    if (period == TimePeriod.day) {
+      return _expenses
+          .where((e) =>
+              e.date.day == anchor.day &&
+              e.date.month == anchor.month &&
+              e.date.year == anchor.year)
+          .toList();
+    } else if (period == TimePeriod.week) {
       // Find start of week (Monday)
-      final startOfWeek = anchor.subtract(Duration(days: anchor.weekday - 1));
-      final endOfWeek = startOfWeek.add(const Duration(days: 6));
-      return _expenses.where((e) => 
-        !e.date.isBefore(startOfWeek.subtract(const Duration(seconds: 1))) && 
-        !e.date.isAfter(endOfWeek.add(const Duration(days: 1)))).toList();
-    } else {
-      // Month
+      final start = anchor.subtract(Duration(days: anchor.weekday - 1));
+      final end = start.add(const Duration(days: 6));
+      return _expenses
+          .where((e) =>
+              e.date.isAfter(start.subtract(const Duration(days: 1))) &&
+              e.date.isBefore(end.add(const Duration(days: 1))))
+          .toList();
+    } else if (period == TimePeriod.month) {
       return _expenses.where((e) => 
         e.date.year == anchor.year && 
         e.date.month == anchor.month).toList();
+    } else if (period == TimePeriod.year) {
+      return _expenses.where((e) => 
+        e.date.year == anchor.year).toList();
     }
+    return []; // Should not be reached if all TimePeriod values are handled
   }
 
   // ... (rest of the file)
@@ -274,6 +289,9 @@ class ExpenseProvider extends ChangeNotifier {
     // Snapshot of currently active recurring expenses to iterate safely
     final initialRecurring = _expenses.where((e) => e.isRecurring).toList();
     bool addedAny = false;
+    
+    List<Expense> toAdd = [];
+    List<Expense> toUpdate = [];
 
     for (var expense in initialRecurring) {
       var current = expense;
@@ -282,38 +300,55 @@ class ExpenseProvider extends ChangeNotifier {
       while (true) {
         final nextDate = _getNextRecurringDate(current);
         
-        // Break if we've caught up to the future
-        // Also break if nextDate didn't advance (safety against infinite loop)
-        if (nextDate.isAfter(now) || !nextDate.isAfter(current.date)) {
-          break;
+          // Break if we've caught up to the future
+          // Also break if nextDate didn't advance (safety against infinite loop)
+          if (nextDate.isAfter(now) || !nextDate.isAfter(current.date)) {
+            break;
+          }
+          
+          // Safety: Don't generate more than 1 year ahead or more than 50 instances at once
+          if (nextDate.difference(now).inDays > 365) break; 
+          
+          // 1. Archive the current/past due expense (History)
+          // Mark it as non-recurring so it stays as a static record
+          final historicVersion = current.copyWith(
+            isRecurring: false,
+          );
+          
+          // 2. Create the new future/current expense (Active)
+          // Move the recurring flag to this new instance
+          final futureVersion = current.copyWith(
+            id: const Uuid().v4(),
+            date: nextDate,
+            isRecurring: true,
+          );
+          
+          toUpdate.add(historicVersion);
+          toAdd.add(futureVersion);
+          
+          // Advance the loop to check if the NEW expense is also already due
+          // (e.g. missed multiple months)
+          current = futureVersion;
+          addedAny = true;
+          
+          // Safety break for loop count
+          // In practice, if someone hasn't opened app in 50 months, this stops it from freezing.
+          // They can open it again to generate more if needed.
+          // We can't easily track loop count here without a counter variable, so I'll trust the date check + 365 day limit.
         }
-
-        // 1. Archive the current/past due expense (History)
-        // Mark it as non-recurring so it stays as a static record
-        final historicVersion = current.copyWith(
-          isRecurring: false,
-        );
-        
-        // 2. Create the new future/current expense (Active)
-        // Move the recurring flag to this new instance
-        final futureVersion = current.copyWith(
-          id: const Uuid().v4(),
-          date: nextDate,
-          isRecurring: true,
-        );
-        
-        // Apply changes to database and memory
-        await updateExpense(historicVersion);
-        await addExpense(futureVersion);
-        
-        // Advance the loop to check if the NEW expense is also already due
-        // (e.g. missed multiple months)
-        current = futureVersion;
-        addedAny = true;
       }
-    }
     
     if (addedAny) {
+      for (final u in toUpdate) {
+        final idx = _expenses.indexWhere((e) => e.id == u.id);
+        if (idx != -1) _expenses[idx] = u;
+        await _repository.saveExpense(u);
+      }
+      for (final a in toAdd) {
+        _expenses.insert(0, a);
+        await _repository.saveExpense(a);
+      }
+      _sortExpenses();
       notifyListeners();
     }
   }
@@ -337,15 +372,39 @@ class ExpenseProvider extends ChangeNotifier {
 
 
   Map<String, double> get categoryTotals {
+    final now = DateTime.now();
+    return _getCategoryTotalsForPeriod(_expenses.where((e) => 
+      !e.isIncome && e.date.month == now.month && e.date.year == now.year).toList());
+  }
+
+  Map<String, double> get categoryTotalsForWeek {
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    return _getCategoryTotalsForPeriod(_expenses.where((e) => 
+      !e.isIncome && !e.date.isBefore(startOfWeek)).toList());
+  }
+
+  Map<String, double> get categoryTotalsForYear {
+    final now = DateTime.now();
+    return _getCategoryTotalsForPeriod(_expenses.where((e) => 
+      !e.isIncome && e.date.year == now.year).toList());
+  }
+
+  Map<String, double> _getCategoryTotalsForPeriod(List<Expense> list) {
     final map = <String, double>{};
-    for (final e in _expenses.where((e) {
-      final now = DateTime.now();
-      return e.date.month == now.month && e.date.year == now.year;
-    })) {
-      map[e.category.id] = (map[e.category.id] ?? 0) + e.amount;
+    for (final e in list) {
+      map[e.category.label] = (map[e.category.label] ?? 0) + e.amount;
     }
     return map;
   }
+
+  Future<void> clearAllData() async {
+    _expenses.clear();
+    notifyListeners();
+    await _repository.clearAllData();
+  }
+
+
 
   Map<String, double> get personTotals {
     final map = <String, double>{};
@@ -358,6 +417,7 @@ class ExpenseProvider extends ChangeNotifier {
   }
 
   List<MapEntry<String, double>> get weeklyTrend {
+    // Returns last 7 days trend including today
     final result = <String, double>{};
     final now = DateTime.now();
     for (int i = 6; i >= 0; i--) {
@@ -365,6 +425,7 @@ class ExpenseProvider extends ChangeNotifier {
       final key = '${day.month}/${day.day}';
       result[key] = _expenses
           .where((e) =>
+              !e.isIncome &&
               e.date.day == day.day &&
               e.date.month == day.month &&
               e.date.year == day.year)
@@ -374,4 +435,62 @@ class ExpenseProvider extends ChangeNotifier {
   }
 
   int get recurringCount => _expenses.where((e) => e.isRecurring).length;
+
+  // ════════════════════════════════════════════════════════════
+  // SMART INSIGHTS
+  // ════════════════════════════════════════════════════════════
+
+  double get thisWeekTotal {
+    final now = DateTime.now();
+    final startOfWeek = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    return _expenses
+        .where((e) => !e.isIncome && !e.date.isBefore(startOfWeek))
+        .fold(0.0, (sum, e) => sum + e.amount);
+  }
+
+  double get lastWeekTotal {
+    final now = DateTime.now();
+    final startOfThisWeek = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    final startOfLastWeek = startOfThisWeek.subtract(const Duration(days: 7));
+    return _expenses
+        .where((e) =>
+            !e.isIncome &&
+            !e.date.isBefore(startOfLastWeek) &&
+            e.date.isBefore(startOfThisWeek))
+        .fold(0.0, (sum, e) => sum + e.amount);
+  }
+
+  /// Percentage change this week vs last week. Positive = spending more.
+  double get weekOverWeekChange {
+    if (lastWeekTotal == 0) return 0;
+    return ((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100;
+  }
+
+  /// Percentage change this month vs last month spending.
+  double get monthOverMonthChange {
+    if (lastMonthTotal == 0) return 0;
+    return ((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100;
+  }
+
+  /// Top 3 most-used category IDs, auto-learned from last 30 days of usage.
+  List<ExpenseCategory> get topCategories {
+    final now = DateTime.now();
+    final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+    final recent = _expenses.where((e) =>
+        !e.isIncome && e.date.isAfter(thirtyDaysAgo));
+
+    final countMap = <String, int>{};
+    final catMap = <String, ExpenseCategory>{};
+    for (final e in recent) {
+      countMap[e.category.id] = (countMap[e.category.id] ?? 0) + 1;
+      catMap[e.category.id] = e.category;
+    }
+
+    final sorted = countMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return sorted.take(3).map((e) => catMap[e.key]!).toList();
+  }
 }

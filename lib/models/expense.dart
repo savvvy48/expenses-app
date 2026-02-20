@@ -181,6 +181,7 @@ class Expense {
     List<String>? receiptPaths,
     List<ExpenseSplit>? splits,
     bool? isIncome,
+    DateTime? createdAt,
     bool? isTemplate,
   }) {
     return Expense(
@@ -197,7 +198,7 @@ class Expense {
       receiptPaths: receiptPaths ?? this.receiptPaths,
       splits: splits ?? this.splits,
       isIncome: isIncome ?? this.isIncome,
-      createdAt: createdAt,
+      createdAt: createdAt ?? this.createdAt,
       isTemplate: isTemplate ?? this.isTemplate,
     );
   }

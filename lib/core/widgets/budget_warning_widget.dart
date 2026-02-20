@@ -1,151 +1,128 @@
 import 'package:flutter/material.dart';
-import '../constants/app_colors.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../providers/expense_provider.dart';
 import '../../providers/budget_provider.dart';
+import '../constants/app_colors.dart';
+import 'package:provider/provider.dart';
 
 class BudgetWarningWidget extends StatelessWidget {
-  final BudgetStatus status;
-  final double usage; // 0.0 to 1.0+
-
-  const BudgetWarningWidget({
-    super.key,
-    required this.status,
-    required this.usage,
-  });
+  const BudgetWarningWidget({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (status == BudgetStatus.safe) return const SizedBox.shrink();
-
-    final color = _statusColor(status);
+    final expProv = context.watch<ExpenseProvider>();
+    final budgetProv = context.watch<BudgetProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(_statusIcon(status), color: color, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _statusTitle(status),
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  _statusMessage(status),
-                  style: TextStyle(
-                    color: isDark ? Colors.white70 : Colors.black87,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+    final limit = budgetProv.monthlyLimit;
+    if (limit <= 0) return const SizedBox.shrink();
+
+    final spent = expProv.thisMonthTotal;
+    final usage = spent / limit;
+    final status = budgetProv.getBudgetStatus(spent, limit);
+
+    // Only show if warning or over
+    if (status == BudgetStatus.ok) return const SizedBox.shrink();
+
+    final color = budgetProv.statusColor(status);
+    final label = budgetProv.statusLabel(status);
+    final pctStr = '${(usage * 100).toStringAsFixed(0)}%';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: isDark ? 0.12 : 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            // Status icon
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                status == BudgetStatus.over
+                    ? Icons.warning_amber_rounded
+                    : Icons.info_outline_rounded,
+                color: color,
+                size: 22,
+              ),
             ),
-          ),
-          if (status == BudgetStatus.exceeded || status == BudgetStatus.critical)
-            _PulseIcon(color: color),
-        ],
+            const SizedBox(width: 14),
+            // Text
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$pctStr of monthly budget used',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Pulsing dot for "over"
+            if (status == BudgetStatus.over) _PulseDot(color: color),
+          ],
+        ),
       ),
     );
   }
-
-  Color _statusColor(BudgetStatus status) {
-    switch (status) {
-      case BudgetStatus.exceeded:
-        return const Color(0xFFD63031);
-      case BudgetStatus.critical:
-        return const Color(0xFFFF7675);
-      case BudgetStatus.warning:
-        return const Color(0xFFFD9644);
-      case BudgetStatus.notice:
-        return const Color(0xFFFDCB6E);
-      default:
-        return AppColors.success;
-    }
-  }
-
-  IconData _statusIcon(BudgetStatus status) {
-    switch (status) {
-      case BudgetStatus.exceeded:
-        return Icons.error_outline;
-      case BudgetStatus.critical:
-        return Icons.warning_amber_rounded;
-      case BudgetStatus.warning:
-        return Icons.info_outline;
-      case BudgetStatus.notice:
-        return Icons.insights;
-      default:
-        return Icons.check_circle_outline;
-    }
-  }
-
-  String _statusTitle(BudgetStatus status) {
-    switch (status) {
-      case BudgetStatus.exceeded:
-        return 'Budget Exceeded';
-      case BudgetStatus.critical:
-        return 'Critical Budget Alert';
-      case BudgetStatus.warning:
-        return 'Budget Warning';
-      case BudgetStatus.notice:
-        return 'Budget Notice';
-      default:
-        return 'On Track';
-    }
-  }
-
-  String _statusMessage(BudgetStatus status) {
-    final pct = (usage * 100).toStringAsFixed(0);
-    switch (status) {
-      case BudgetStatus.exceeded:
-        return 'You have used $pct% of your budget.';
-      case BudgetStatus.critical:
-        return 'You have used $pct% of your budget.';
-      case BudgetStatus.warning:
-        return 'You have used $pct% of your budget.';
-      case BudgetStatus.notice:
-        return 'You can do it! $pct% used.';
-      default:
-        return '';
-    }
-  }
 }
 
-class _PulseIcon extends StatefulWidget {
+class _PulseDot extends StatefulWidget {
   final Color color;
-  const _PulseIcon({required this.color});
+  const _PulseDot({required this.color});
   @override
-  State<_PulseIcon> createState() => _PulseIconState();
+  State<_PulseDot> createState() => _PulseDotState();
 }
 
-class _PulseIconState extends State<_PulseIcon>
+class _PulseDotState extends State<_PulseDot>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
+  late AnimationController _ctrl;
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
+        vsync: this, duration: const Duration(milliseconds: 800))
+      ..repeat(reverse: true);
   }
+
   @override
-  void dispose() {  _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _ctrl,
       child: Container(
-        width: 8, height: 8,
+        width: 10,
+        height: 10,
         decoration: BoxDecoration(
           color: widget.color,
           shape: BoxShape.circle,

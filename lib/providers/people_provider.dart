@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 import '../core/data/people_repository.dart';
-import '../core/data/sample_data.dart';
 import '../models/person.dart';
 
 class PeopleProvider extends ChangeNotifier {
@@ -19,20 +19,20 @@ class PeopleProvider extends ChangeNotifier {
     await _repository.init();
     _people = _repository.getAllPeople();
     
-    // Simple check if first run logic is needed for people too
-    // For now, we reuse the existing validation logic - if empty, try sample data
-    if (_people.isEmpty) {
-       // We can just rely on sample data here if needed, or check a setting
-       // But to be consistent with ExpenseProvider, let's just populate if completely empty on first load.
-       // However, to avoid overwriting user deletes, we should probably check that 'isInitialized' flag
-       // but for now, sticking to the existing behavior pattern but using the repository.
-       // Actually, the original code initialized sample data if empty. Let's replicate that simply.
-       // Better: Use the sample data if empty AND we want to provide a starter set.
-       // We'll trust the repository init mostly, but let's add sample data if purely empty for UX
-       _people = SampleData.getPeople();
+    final settings = await Hive.openBox('settings');
+    final isFirstRun = settings.get('isFirstRun_people', defaultValue: true) as bool;
+
+    if (_people.isEmpty && isFirstRun) {
+       _people = [
+         Person(id: 'sample_1', name: 'Alice', email: 'alice@email.com'),
+         Person(id: 'sample_2', name: 'Bob', email: 'bob@email.com'),
+       ];
        for(var p in _people) {
          await _repository.savePerson(p);
        }
+       await settings.put('isFirstRun_people', false);
+    } else if (isFirstRun) {
+       await settings.put('isFirstRun_people', false);
     }
     notifyListeners();
   }

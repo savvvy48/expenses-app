@@ -1,4 +1,5 @@
 import '../../models/expense.dart';
+import '../../models/person.dart';
 
 abstract class ExpenseRepository {
   Future<void> init();
@@ -14,4 +15,11 @@ abstract class ExpenseRepository {
   List<ExpenseCategory> getCustomCategories();
   Future<void> saveCategory(ExpenseCategory category);
   Future<void> deleteCategory(String id);
+
+  // People
+  List<Person> getAllPeople();
+  Future<void> addPerson(Person person);
+
+  // System
+  Future<void> clearAllData();
 }

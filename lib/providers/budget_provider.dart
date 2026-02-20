@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import '../models/budget.dart';
 
-enum BudgetStatus { safe, notice, warning, critical, exceeded }
+/// Simplified to 3 states as per the blueprint:
+/// OK = within budget, Warning = 80%+, Over = 100%+
+enum BudgetStatus { ok, warning, over }
 
 class BudgetProvider extends ChangeNotifier {
   static const String _boxName = 'budget';
@@ -22,46 +24,53 @@ class BudgetProvider extends ChangeNotifier {
   }
 
   double monthlyUtilization(double spent) =>
-      (spent / _budget.monthlyLimit).clamp(0.0, 1.5);
+      _budget.monthlyLimit > 0 ? (spent / _budget.monthlyLimit).clamp(0.0, 1.5) : 0;
 
   double dailyUtilization(double spent) =>
-      (spent / _budget.dailyLimit).clamp(0.0, 1.5);
+      _budget.dailyLimit > 0 ? (spent / _budget.dailyLimit).clamp(0.0, 1.5) : 0;
 
-  bool isOverMonthlyBudget(double spent) => spent >= _budget.monthlyLimit;
-  bool isNearMonthlyBudget(double spent) => spent >= _budget.monthlyLimit * 0.8;
-  bool isOverDailyBudget(double spent) => spent >= _budget.dailyLimit;
+  bool isOverMonthlyBudget(double spent) =>
+      _budget.monthlyLimit > 0 && spent >= _budget.monthlyLimit;
+  bool isNearMonthlyBudget(double spent) =>
+      _budget.monthlyLimit > 0 && spent >= _budget.monthlyLimit * 0.8;
+  bool isOverDailyBudget(double spent) =>
+      _budget.dailyLimit > 0 && spent >= _budget.dailyLimit;
 
+  /// Simplified 3-state budget status
   BudgetStatus getBudgetStatus(double spent, double limit) {
-    if (limit <= 0) return BudgetStatus.safe;
+    if (limit <= 0) return BudgetStatus.ok;
     final usage = spent / limit;
-    if (usage >= 1.0) return BudgetStatus.exceeded;
-    if (usage >= 0.9) return BudgetStatus.critical;
-    if (usage >= 0.75) return BudgetStatus.warning;
-    if (usage >= 0.5) return BudgetStatus.notice;
-    return BudgetStatus.safe;
+    if (usage >= 1.0) return BudgetStatus.over;
+    if (usage >= 0.8) return BudgetStatus.warning;
+    return BudgetStatus.ok;
   }
 
   Color statusColor(BudgetStatus status) {
     switch (status) {
-      case BudgetStatus.exceeded:
-        return const Color(0xFFD63031); // Dark Red
-      case BudgetStatus.critical:
-        return const Color(0xFFFF7675); // Red
+      case BudgetStatus.over:
+        return const Color(0xFFEF4444); // Red
       case BudgetStatus.warning:
-        return const Color(0xFFFD9644); // Orange
-      case BudgetStatus.notice:
-        return const Color(0xFFFDCB6E); // Yellow
-      case BudgetStatus.safe:
-        return const Color(0xFF00B894); // Green
+        return const Color(0xFFF59E0B); // Amber
+      case BudgetStatus.ok:
+        return const Color(0xFF10B981); // Green
     }
   }
 
   Color budgetColor(double utilization) {
-    if (utilization >= 1.0) return statusColor(BudgetStatus.exceeded);
-    if (utilization >= 0.9) return statusColor(BudgetStatus.critical);
-    if (utilization >= 0.75) return statusColor(BudgetStatus.warning);
-    if (utilization >= 0.5) return statusColor(BudgetStatus.notice);
-    return statusColor(BudgetStatus.safe);
+    if (utilization >= 1.0) return statusColor(BudgetStatus.over);
+    if (utilization >= 0.8) return statusColor(BudgetStatus.warning);
+    return statusColor(BudgetStatus.ok);
+  }
+
+  String statusLabel(BudgetStatus status) {
+    switch (status) {
+      case BudgetStatus.over:
+        return 'Over Budget';
+      case BudgetStatus.warning:
+        return 'Nearing Limit';
+      case BudgetStatus.ok:
+        return 'On Track';
+    }
   }
 
   Future<void> setMonthlyLimit(double limit) async {

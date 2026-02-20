@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/constants/app_colors.dart';
@@ -22,7 +21,7 @@ class _AppShellState extends State<AppShell> {
   final _screens = const [
     HomeScreen(),
     AnalyticsScreen(),
-    SizedBox(),
+    SizedBox(), // placeholder for center FAB
     PeopleScreen(),
     SettingsScreen(),
   ];
@@ -30,11 +29,20 @@ class _AppShellState extends State<AppShell> {
   void _onTabTap(int index) {
     if (index == 2) {
       HapticFeedback.mediumImpact();
-      // Backdrop blur + slide up modal
       Navigator.of(context).push(
-        MaterialPageRoute(
-          fullscreenDialog: false, // Ensure slide-from-right, not slide-up modal
-          builder: (_) => const AddExpenseScreen(),
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const AddExpenseScreen(),
+          transitionsBuilder: (_, anim, __, child) {
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 1),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutQuart)),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 400),
+          fullscreenDialog: true,
         ),
       );
       return;
@@ -48,23 +56,21 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    // Smooth fade + slide transition between pages
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final goingRight = _currentIndex > _previousIndex;
 
     return Scaffold(
+      extendBody: true,
       body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
+        duration: const Duration(milliseconds: 400),
+        switchInCurve: Curves.easeOutQuart,
+        switchOutCurve: Curves.easeInQuart,
         transitionBuilder: (child, animation) {
           return FadeTransition(
             opacity: animation,
             child: SlideTransition(
               position: Tween<Offset>(
-                begin: Offset(goingRight ? 0.25 : -0.25, 0),
+                begin: Offset(goingRight ? 0.08 : -0.08, 0),
                 end: Offset.zero,
               ).animate(animation),
               child: child,
@@ -76,175 +82,162 @@ class _AppShellState extends State<AppShell> {
           child: _screens[_currentIndex],
         ),
       ),
-      bottomNavigationBar: Container(
+      bottomNavigationBar: _BottomNavBar(
+        currentIndex: _currentIndex,
+        isDark: isDark,
+        onTabTap: _onTabTap,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BOTTOM NAV BAR
+// ═══════════════════════════════════════════════════════════════════
+
+class _BottomNavBar extends StatelessWidget {
+  final int currentIndex;
+  final bool isDark;
+  final ValueChanged<int> onTabTap;
+
+  const _BottomNavBar({
+    required this.currentIndex,
+    required this.isDark,
+    required this.onTabTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 90,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      child: Container(
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-          border: Border(
-            top: BorderSide(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            ),
+          color: isDark
+              ? AppColors.darkCard.withOpacity(0.95)
+              : Colors.white.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+            width: 1,
           ),
+          boxShadow: AppColors.softShadow(isDark),
         ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 64,
-            child: Row(
-              children: [
-                _NavButton(
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home,
-                  label: 'Home',
-                  isActive: _currentIndex == 0,
-                  onTap: () => _onTabTap(0),
-                  isDark: isDark,
-                ),
-                _NavButton(
-                  icon: Icons.bar_chart_outlined,
-                  activeIcon: Icons.bar_chart,
-                  label: 'Analytics',
-                  isActive: _currentIndex == 1,
-                  onTap: () => _onTabTap(1),
-                  isDark: isDark,
-                ),
-                _AddButton(onTap: () => _onTabTap(2), isDark: isDark),
-                _NavButton(
-                  icon: Icons.people_outlined,
-                  activeIcon: Icons.people,
-                  label: 'People',
-                  isActive: _currentIndex == 3,
-                  onTap: () => _onTabTap(3),
-                  isDark: isDark,
-                ),
-                _NavButton(
-                  icon: Icons.settings_outlined,
-                  activeIcon: Icons.settings,
-                  label: 'Settings',
-                  isActive: _currentIndex == 4,
-                  onTap: () => _onTabTap(4),
-                  isDark: isDark,
-                ),
-              ],
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          children: [
+            _NavIcon(
+              icon: Icons.home_outlined,
+              activeIcon: Icons.home_rounded,
+              isActive: currentIndex == 0,
+              isDark: isDark,
+              onTap: () => onTabTap(0),
             ),
-          ),
+            _NavIcon(
+              icon: Icons.pie_chart_outline_rounded,
+              activeIcon: Icons.pie_chart_rounded,
+              isActive: currentIndex == 1,
+              isDark: isDark,
+              onTap: () => onTabTap(1),
+            ),
+            // ─── Center FAB ───
+            Expanded(
+              child: _CenterFAB(
+                onTap: () => onTabTap(2),
+              ),
+            ),
+            _NavIcon(
+              icon: Icons.people_outline_rounded,
+              activeIcon: Icons.people_rounded,
+              isActive: currentIndex == 3,
+              isDark: isDark,
+              onTap: () => onTabTap(3),
+            ),
+            _NavIcon(
+              icon: Icons.settings_outlined,
+              activeIcon: Icons.settings_rounded,
+              isActive: currentIndex == 4,
+              isDark: isDark,
+              onTap: () => onTabTap(4),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Animated nav button with scale feedback
-class _NavButton extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════════
+// NAV ICON (icon only + dot indicator)
+// ═══════════════════════════════════════════════════════════════════
+
+class _NavIcon extends StatelessWidget {
   final IconData icon;
   final IconData activeIcon;
-  final String label;
   final bool isActive;
-  final VoidCallback onTap;
   final bool isDark;
+  final VoidCallback onTap;
 
-  const _NavButton({
+  const _NavIcon({
     required this.icon,
     required this.activeIcon,
-    required this.label,
     required this.isActive,
-    required this.onTap,
     required this.isDark,
+    required this.onTap,
   });
 
   @override
-  State<_NavButton> createState() => _NavButtonState();
-}
-
-class _NavButtonState extends State<_NavButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 100));
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final color = widget.isActive
+    final color = isActive
         ? AppColors.primary
-        : widget.isDark
+        : isDark
             ? AppColors.darkTextTertiary
             : AppColors.lightTextTertiary;
 
     return Expanded(
       child: GestureDetector(
-        onTapDown: (_) => _ctrl.forward(),
-        onTapUp: (_) {
-          _ctrl.reverse();
-          widget.onTap();
-        },
-        onTapCancel: () => _ctrl.reverse(),
+        onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 1.0, end: 0.9)
-              .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut)),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 64,
-            decoration: widget.isActive
-                ? BoxDecoration(
-                    border: const Border(
-                      top: BorderSide(color: AppColors.primary, width: 2),
-                    ),
-                    color: AppColors.primary.withValues(alpha: 0.06),
-                  )
-                : null,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    widget.isActive ? widget.activeIcon : widget.icon,
-                    key: ValueKey(widget.isActive),
-                    color: color,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  widget.label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 10,
-                    fontWeight:
-                        widget.isActive ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isActive ? activeIcon : icon,
+              color: color,
+              size: 24,
             ),
-          ),
+            const SizedBox(height: 4),
+            // Dot indicator
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
+              width: isActive ? 6 : 0,
+              height: isActive ? 6 : 0,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Animated add button with spring scale
-class _AddButton extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════════
+// CENTER FAB
+// ═══════════════════════════════════════════════════════════════════
+
+class _CenterFAB extends StatefulWidget {
   final VoidCallback onTap;
-  final bool isDark;
-  const _AddButton({required this.onTap, required this.isDark});
+  const _CenterFAB({required this.onTap});
 
   @override
-  State<_AddButton> createState() => _AddButtonState();
+  State<_CenterFAB> createState() => _CenterFABState();
 }
 
-class _AddButtonState extends State<_AddButton>
+class _CenterFABState extends State<_CenterFAB>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
@@ -252,7 +245,9 @@ class _AddButtonState extends State<_AddButton>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 100));
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+    );
   }
 
   @override
@@ -263,27 +258,31 @@ class _AddButtonState extends State<_AddButton>
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTapDown: (_) => _ctrl.forward(),
-        onTapUp: (_) {
-          _ctrl.reverse();
-          widget.onTap();
-        },
-        onTapCancel: () => _ctrl.reverse(),
-        child: Center(
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 1.0, end: 0.88)
-                .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut)),
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                boxShadow: AppColors.sharpShadow(widget.isDark),
+    return GestureDetector(
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) {
+        _ctrl.reverse();
+        widget.onTap();
+      },
+      onTapCancel: () => _ctrl.reverse(),
+      child: Center(
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 1.0, end: 0.88).animate(
+            CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
+          ),
+          child: Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, AppColors.primaryLight],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              child: const Icon(Icons.add, color: Colors.white, size: 24),
+              shape: BoxShape.circle,
+              boxShadow: AppColors.glowShadow(AppColors.primary),
             ),
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
           ),
         ),
       ),

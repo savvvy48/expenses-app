@@ -1,6 +1,8 @@
 
 
 class AppConstants {
+  static const String appName = 'PocketSafe';
+
   // Animation Durations
   static const Duration animFast = Duration(milliseconds: 200);
   static const Duration animMedium = Duration(milliseconds: 300);

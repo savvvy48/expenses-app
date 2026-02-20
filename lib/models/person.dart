@@ -11,6 +11,8 @@ class Person {
   final int? expiresInDays;
   final int avatarColorValue;
 
+  final String? phone;
+
   static const List<int> avatarColors = [
     0xFFFF7675, 0xFF6C5CE7, 0xFF00B894, 0xFFFDCB6E, 
     0xFFE17055, 0xFF55EFC4, 0xFFA29BFE, 0xFFFD79A8,
@@ -21,6 +23,7 @@ class Person {
     required this.id,
     required this.name,
     required this.email,
+    this.phone,
     this.role = 'Member',
     this.status = PersonStatus.active,
     this.expiresInDays,
@@ -40,6 +43,7 @@ class Person {
   Person copyWith({
     String? name,
     String? email,
+    String? phone,
     String? role,
     PersonStatus? status,
     int? expiresInDays,
@@ -49,6 +53,7 @@ class Person {
       id: id,
       name: name ?? this.name,
       email: email ?? this.email,
+      phone: phone ?? this.phone,
       role: role ?? this.role,
       status: status ?? this.status,
       expiresInDays: expiresInDays ?? this.expiresInDays,
@@ -60,6 +65,7 @@ class Person {
         'id': id,
         'name': name,
         'email': email,
+        'phone': phone,
         'role': role,
         'status': status.index,
         'expiresInDays': expiresInDays,
@@ -70,6 +76,7 @@ class Person {
         id: map['id'] as String,
         name: map['name'] as String,
         email: map['email'] as String,
+        phone: map['phone'] as String?,
         role: map['role'] as String? ?? 'Member',
         status: PersonStatus.values[map['status'] as int? ?? 0],
         expiresInDays: map['expiresInDays'] as int?,

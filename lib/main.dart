@@ -4,13 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'core/constants/app_colors.dart';
+import 'core/constants/app_constants.dart';
 import 'core/constants/app_durations.dart';
 import 'core/data/hive_expense_repository.dart';
 import 'core/data/hive_people_repository.dart';
 import 'core/data/migration_helper.dart';
 import 'core/theme/app_theme.dart';
-import 'core/theme/theme_provider.dart';
 import 'core/widgets/shimmer_loading.dart';
+import 'providers/settings_provider.dart';
 import 'providers/expense_provider.dart';
 import 'providers/people_provider.dart';
 import 'providers/budget_provider.dart';
@@ -19,6 +20,7 @@ import 'screens/app_shell.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
+  await Hive.openBox('settings');
 
   // Initialize repositories
   final expenseRepo = HiveExpenseRepository();
@@ -34,7 +36,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => ExpenseProvider(expenseRepo)),
         ChangeNotifierProvider(create: (_) => PeopleProvider(peopleRepo)),
         ChangeNotifierProvider(create: (_) => BudgetProvider()),
@@ -84,11 +86,11 @@ class _DailyExpensesAppState extends State<DailyExpensesApp> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    final settingsProvider = Provider.of<SettingsProvider>(context);
 
     // AnimatedTheme for smooth dark mode transition
     return MaterialApp(
-      title: 'SavvySpend',
+      title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -100,7 +102,7 @@ class _DailyExpensesAppState extends State<DailyExpensesApp> {
       ],
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: themeProvider.themeMode,
+      themeMode: settingsProvider.themeMode,
       builder: (context, child) {
         // Sync system UI overlay with current theme
         final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -130,46 +132,47 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
-
     return Scaffold(
-      appBar: AppBar(
-        forceMaterialTransparency: true,
-        title: const ShimmerLoading.rectangular(
-          height: 24,
-          width: 150,
-        ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: ShimmerLoading.circular(size: 32),
-          ),
-        ],
-      ),
+      backgroundColor: AppColors.darkBg,
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          children: [
-             SizedBox(height: 16),
-            // Header Balance Card
-             ShimmerCard(height: 180),
-             SizedBox(height: 24),
-             
-            // List Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                 ShimmerLoading.rectangular(height: 20, width: 100),
-                 ShimmerLoading.rectangular(height: 20, width: 60),
-              ],
-            ),
-             SizedBox(height: 16),
-            
-            // Transaction List
-            Expanded(
-              child: ShimmerList(itemCount: 6),
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 24),
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const ShimmerLoading.rectangular(height: 20, width: 120),
+                  const ShimmerLoading.circular(size: 44),
+                ],
+              ),
+              const SizedBox(height: 24),
+              // Hero Card
+              const ShimmerCard(height: 200),
+              const SizedBox(height: 24),
+              // Quick Actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(4, (_) => const ShimmerLoading.circular(size: 56)),
+              ),
+              const SizedBox(height: 32),
+              // Transactions Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const ShimmerLoading.rectangular(height: 18, width: 120),
+                  const ShimmerLoading.rectangular(height: 14, width: 60),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Transaction List
+              Expanded(
+                child: ShimmerList(itemCount: 5),
+              ),
+            ],
+          ),
         ),
       ),
     );

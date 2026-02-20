@@ -1,6 +1,7 @@
 import 'dart:developer';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../models/expense.dart';
+import '../../models/person.dart';
 import '../constants/app_constants.dart';
 import 'expense_repository.dart';
 
@@ -13,6 +14,7 @@ class HiveExpenseRepository implements ExpenseRepository {
     try {
       _expenseBox = await Hive.openBox<Map>(AppConstants.boxExpenses);
       _categoryBox = await Hive.openBox<Map>(AppConstants.boxCategories);
+      await Hive.openBox<Map>(AppConstants.boxPeople);
     } catch (e, stack) {
       log('Error initializing hive boxes: $e', error: e, stackTrace: stack);
       // In a real app, might want to delete corrupted boxes or show fatal error
@@ -104,6 +106,38 @@ class HiveExpenseRepository implements ExpenseRepository {
     } catch (e, stack) {
       log('Error deleting category: $e', error: e, stackTrace: stack);
       throw Exception('Failed to delete category');
+    }
+  }
+
+  @override
+  List<Person> getAllPeople() {
+    try {
+      final box = Hive.box<Map>(AppConstants.boxPeople);
+      return box.values.map((e) => Person.fromMap(e)).toList();
+    } catch (e) {
+      log('Error fetching people: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<void> addPerson(Person person) async {
+    try {
+      final box = Hive.box<Map>(AppConstants.boxPeople);
+      await box.put(person.id, person.toMap());
+    } catch (e) {
+      log('Error adding person: $e');
+    }
+  }
+
+  @override
+  Future<void> clearAllData() async {
+    try {
+      await _expenseBox.clear();
+      await _categoryBox.clear();
+      await Hive.box<Map>(AppConstants.boxPeople).clear();
+    } catch (e) {
+      log('Error clearing all data: $e');
     }
   }
 }
